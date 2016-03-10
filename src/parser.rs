@@ -342,26 +342,31 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
 #[derive(Debug,PartialEq,Eq)]
 pub struct ScriptDataObject<'a> {
   name: &'a str,
-  data: ScriptDataValue<'a>
+  data: ScriptDataValue<'a>,
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub struct ScriptDataDate {
+  date_time: f64,
+  local_date_time_offset: i16, // SI16
 }
 
 #[derive(Debug,PartialEq,Eq)]
 pub enum ScriptDataValue<'a> {
-  Number,
-  Boolean,
+  Number(f64),
+  Boolean(bool),
   String(&'a str),
-  Object,
-  MovieClip,
+  Object(Vec<ScriptDataObject<'a>>),
+  MovieClip(&'a str),
   Null,
   UNdefined,
-  Reference,
-  ECMAArray,
-  StrictArray,
-  Date,
+  Reference(u16),
+  ECMAArray(Vec<ScriptDataObject<'a>>),
+  StrictArray(Vec<ScriptDataObject<'a>>),
+  Date(ScriptDataDate),
   LongString(&'a str),
 }
 
-/*
 named!(pub script_data_object<ScriptDataObject>,
   chain!(
     name: script_data_string ~
@@ -388,14 +393,59 @@ pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],()> {
 
 named!(pub script_data_string<&str>, map_res!(length_bytes!(be_u16), from_utf8));
 named!(pub script_data_long_string<&str>, map_res!(length_bytes!(be_u32), from_utf8));
+named!(pub script_data_date<ScriptDataDate>,
+  chain!(
+    date_time: take_bits!(f64, 64) ~
+    local_date_time_offset: take_bits!(i16, 16),
+    || {
+      ScriptDataDate {
+        date_time: date_time,
+        local_date_time_offset: local_date_time_offset
+      }
+    }
+  )
+);
+named!(pub script_data_objects<Vec<ScriptDataObject> >,
+  terminated!(many0!(pair!(script_data_string, script_data_value)), script_data_object_end)
+  //terminated!(many0!(pair!(script_data_string, script_data_object)), script_data_object_end)
+);
+named!(pub script_data_ECMA_array<Vec<ScriptDataObject> >,
+  chain!(
+    take_bits!(u32, 32) ~
+    script_data_objects
+  )
+);
+named!(pub script_data_strict_array<Vec<ScriptDataObject> >,
+  chain!(
+    size: take_bits!(u32, 32) ~
+    many_m_n!(0, size, script_data_value)
+  )
+);
 
-named!(pub script_data_value<ScriptDataValue>, );
+// 9 is the end marker of Object type
+named!(pub script_data_value<ScriptDataValue>,
+  chain!(
+    tag_type: take_bits!(u8, 8) ~
+    data: switch!(tag_type,
+      0  => value!(ScriptDataValue::Number(take_bits!(f64, 64)))
+      | 1  => value!(ScriptDataValue::Boolean(take_bits!(u8, 8)))
+      | 2  => value!(ScriptDataValue::String(script_data_string))
+      | 3  => value!(ScriptDataValue::Object(script_data_objects))
+      | 4  => value!(ScriptDataValue::MovieClip)
+      | 5  => value!(ScriptDataValue::Null) // to remove
+      | 6  => value!(ScriptDataValue::UNdefined) // to remove
+      | 7  => value!(ScriptDataValue::Reference(take_bits!(u16, 16)))
+      | 8  => value!(ScriptDataValue::ECMAArray(script_data_ECMA_array))
+      | 10 => value!(ScriptDataValue::StrictArray(script_data_strict_array))
+      | 11 => value!(ScriptDataValue::Date(script_data_date))
+      | 12 => value!(ScriptDataValue::LongString(script_data_long_string)))
+  )
+);
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct ScriptData {
-  objects: Vec<ScriptDataObject>
+  objects: Vec<ScriptDataObject>,
 }
-*/
 
 #[allow(non_uppercase_globals)]
 #[cfg(test)]
@@ -454,6 +504,31 @@ mod tests {
   }
 
   #[test]
+  fn video_tags() {
+    let tag_start = 24;
+    assert_eq!(
+      video_data(&zelda[tag_start..tag_start+537], 537),
+      IResult::Done(
+        &b""[..],
+        VideoData {
+          frame_type: FrameType::Key,
+          codec_id:   CodecId::H263,
+          video_data: &zelda[tag_start+1..tag_start+537]
+        }
+    ));
+    assert_eq!(
+      video_data(&zelda[tag_start..tag_start+2984], 2984),
+      IResult::Done(
+        &b""[..],
+        VideoData {
+          frame_type: FrameType::Key,
+          codec_id:   CodecId::H263,
+          video_data: &zelda[tag_start+1..tag_start+2984]
+        }
+    ));
+  }
+
+  #[test]
   fn audio_tags() {
     let tag_start = 24+537+4;
     println!("size of previous tag: {:?}", be_u32(&zelda[24+537..tag_start]));
@@ -500,31 +575,6 @@ mod tests {
           sound_size:   SoundSize::Snd16bit,
           sound_type:   SoundType::SndMono,
           sound_data:   &zeldaHQ[tag_start2+12..tag_start2+11+642]
-        }
-    ));
-  }
-
-  #[test]
-  fn video_tags() {
-    let tag_start = 24;
-    assert_eq!(
-      video_data(&zelda[tag_start..tag_start+537], 537),
-      IResult::Done(
-        &b""[..],
-        VideoData {
-          frame_type: FrameType::Key,
-          codec_id:   CodecId::H263,
-          video_data: &zelda[tag_start+1..tag_start+537]
-        }
-    ));
-    assert_eq!(
-      video_data(&zelda[tag_start..tag_start+2984], 2984),
-      IResult::Done(
-        &b""[..],
-        VideoData {
-          frame_type: FrameType::Key,
-          codec_id:   CodecId::H263,
-          video_data: &zelda[tag_start+1..tag_start+2984]
         }
     ));
   }

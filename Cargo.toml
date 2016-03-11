@@ -5,3 +5,6 @@ authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
 
 [dependencies]
 nom = "~1.2.0"
+
+[features]
+nightly = []

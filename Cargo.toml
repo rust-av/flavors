@@ -2,3 +2,6 @@
 name = "flavors"
 version = "0.1.0"
 authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
+
+[dependencies]
+nom = "~1.2.0"

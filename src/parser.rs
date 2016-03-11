@@ -53,6 +53,7 @@ pub struct TagHeader {
 
 #[derive(Debug,PartialEq,Eq)]
 pub enum TagData {
+  //Audio(AudioData),
   Audio,
   Video,
   Script,
@@ -86,11 +87,105 @@ named!(pub tag_header<TagHeader>,
   )
 );
 
+#[derive(Debug,PartialEq,Eq)]
+pub enum SoundFormat {
+  PCM_BE,
+  ADPCM,
+  MP3,
+  PCM_LE,
+  NELLYMOSER_16KHZ_MONO,
+  NELLYMOSER_8KHZ_MONO,
+  NELLYMOSER,
+  PCM_ALAW,
+  PCM_ULAW,
+  AAC,
+  SPEEX,
+  MP3_8KHZ,
+  DEVICE_SPECIFIC,
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub enum SoundRate {
+  _5_5KHZ,
+  _11KHZ,
+  _22KHZ,
+  _44KHZ,
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub enum SoundSize {
+  Snd8bit,
+  Snd16bit,
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub enum SoundType {
+  SndMono,
+  SndStereo,
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub struct AudioData<'a> {
+  sound_format: SoundFormat,
+  sound_rate:   SoundRate,
+  sound_size:   SoundSize,
+  sound_type:   SoundType,
+  sound_data:   &'a [u8]
+}
+
+pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
+  if input.len() < size {
+    return IResult::Incomplete(Needed::Size(size));
+  }
+
+  let (remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
+    tuple!(
+      switch!(take_bits!(u8, 4),
+        0  => value!(SoundFormat::PCM_BE)
+      | 1  => value!(SoundFormat::ADPCM)
+      | 2  => value!(SoundFormat::MP3)
+      | 3  => value!(SoundFormat::PCM_LE)
+      | 4  => value!(SoundFormat::NELLYMOSER_16KHZ_MONO)
+      | 5  => value!(SoundFormat::NELLYMOSER_8KHZ_MONO)
+      | 6  => value!(SoundFormat::NELLYMOSER)
+      | 7  => value!(SoundFormat::PCM_ALAW)
+      | 8  => value!(SoundFormat::PCM_ULAW)
+      | 10 => value!(SoundFormat::AAC)
+      | 11 => value!(SoundFormat::SPEEX)
+      | 14 => value!(SoundFormat::MP3_8KHZ)
+      | 15 => value!(SoundFormat::DEVICE_SPECIFIC)
+      ),
+      switch!(take_bits!(u8, 2),
+        0 => value!(SoundRate::_5_5KHZ)
+      | 1 => value!(SoundRate::_11KHZ)
+      | 2 => value!(SoundRate::_22KHZ)
+      | 3 => value!(SoundRate::_44KHZ)
+      ),
+      switch!(take_bits!(u8, 1),
+        0 => value!(SoundSize::Snd8bit)
+      | 1 => value!(SoundSize::Snd16bit)
+      ),
+      switch!(take_bits!(u8, 1),
+        0 => value!(SoundType::SndMono)
+      | 1 => value!(SoundType::SndStereo)
+      )
+    )
+  ));
+
+  IResult::Done(&input[size..], AudioData {
+    sound_format: sformat,
+    sound_rate:   srate,
+    sound_size:   ssize,
+    sound_type:   stype,
+    sound_data:   &input[1..size]
+  })
+}
+
 #[allow(non_uppercase_globals)]
 #[cfg(test)]
 mod tests {
   use super::*;
-  use nom::IResult;
+  use nom::{IResult,be_u32,HexDisplay};
 
   const zelda       : &'static [u8] = include_bytes!("../assets/zelda.flv");
   const zeldaHQ     : &'static [u8] = include_bytes!("../assets/zeldaHQ.flv");
@@ -139,6 +234,57 @@ mod tests {
       IResult::Done(
         &b""[..],
         TagHeader { tag_type: TagType::Script, data_size: 273, timestamp: 0, stream_id: 0 }
+    ));
+  }
+
+  #[test]
+  fn first_audio_tags() {
+    let tag_start = 24+537+4;
+    println!("size of previous tag: {:?}", be_u32(&zelda[24+537..tag_start]));
+    assert_eq!(
+      tag_header(&zelda[tag_start..tag_start+11]),
+      IResult::Done(
+        &b""[..],
+        TagHeader { tag_type: TagType::Audio, data_size: 642, timestamp: 0, stream_id: 0 }
+    ));
+
+    let tag_start2 = 24+2984+4;
+    println!("size of previous tag: {:?}", be_u32(&zeldaHQ[24+2984..tag_start2]));
+    println!("data:\n{}", (&zeldaHQ[tag_start2..tag_start2+11]).to_hex(8));
+    assert_eq!(
+      tag_header(&zeldaHQ[tag_start2..tag_start2+11]),
+      IResult::Done(
+        &b""[..],
+        TagHeader { tag_type: TagType::Audio, data_size: 642, timestamp: 0, stream_id: 0 }
+    ));
+
+
+    println!("data: {:?}", audio_data(&zelda[tag_start+11..tag_start+11+642], 642));
+    println!("data: {:?}", audio_data(&zeldaHQ[tag_start2+11..tag_start2+11+642], 642));
+    assert_eq!(
+      audio_data(&zelda[tag_start+11..tag_start+11+642], 642),
+      IResult::Done(
+        &b""[..],
+        AudioData {
+          sound_format: SoundFormat::ADPCM,
+          sound_rate:   SoundRate::_22KHZ,
+          sound_size:   SoundSize::Snd16bit,
+          sound_type:   SoundType::SndMono,
+          sound_data:   &zelda[tag_start+12..tag_start+11+642]
+        }
+    ));
+
+    assert_eq!(
+      audio_data(&zeldaHQ[tag_start2+11..tag_start2+11+642], 642),
+      IResult::Done(
+        &b""[..],
+        AudioData {
+          sound_format: SoundFormat::ADPCM,
+          sound_rate:   SoundRate::_22KHZ,
+          sound_size:   SoundSize::Snd16bit,
+          sound_type:   SoundType::SndMono,
+          sound_data:   &zeldaHQ[tag_start2+12..tag_start2+11+642]
+        }
     ));
   }
 }

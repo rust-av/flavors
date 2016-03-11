@@ -1,5 +1,8 @@
 # Flavors, a FLV parser in Rust with nom
 
+[![Build Status](https://travis-ci.org/Geal/flavors.svg?branch=master)](https://travis-ci.org/Geal/flavors)
+[![Coverage Status](https://coveralls.io/repos/Geal/flavors/badge.svg?branch=master)](https://coveralls.io/r/Geal/flavors?branch=master)
+
 References:
 - specification: https://www.adobe.com/content/dam/Adobe/en/devnet/flv/pdfs/video_file_format_spec_v10.pdf
 - samples: http://streams.videolan.org/samples/FLV/

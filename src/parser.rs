@@ -36,6 +36,7 @@ named!(pub header<Header>,
   )
 );
 
+#[allow(non_uppercase_globals)]
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -47,9 +48,23 @@ mod tests {
 
   #[test]
   fn headers() {
-    println!("zelda: {:?}", header(&zelda[..9]));
-    println!("zeldaHQ: {:?}", header(&zeldaHQ[..9]));
-    println!("commercials: {:?}", header(&commercials[..9]));
-    assert!(false);
+    assert_eq!(
+      header(&zelda[..9]),
+      IResult::Done(
+        &b""[..],
+        Header { version: 1, audio: true, video: true, offset: 9 }
+    ));
+    assert_eq!(
+      header(&zeldaHQ[..9]),
+      IResult::Done(
+        &b""[..],
+        Header { version: 1, audio: true, video: true, offset: 9 }
+    ));
+    assert_eq!(
+      header(&commercials[..9]),
+      IResult::Done(
+        &b""[..],
+        Header { version: 1, audio: true, video: true, offset: 9 }
+    ));
   }
 }

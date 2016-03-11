@@ -1,4 +1,5 @@
-use nom::{be_u8,be_u32,IResult,Needed};
+use nom::{be_u8,be_u32,IResult,Needed,Err,ErrorKind};
+use std::str::from_utf8;
 
 /// Recognizes big endian unsigned 4 bytes integer
 #[inline]
@@ -240,6 +241,65 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
     video_data: &input[1..size]
   })
 }
+
+#[derive(Debug,PartialEq,Eq)]
+pub struct ScriptDataObject<'a> {
+  name: &'a str,
+  data: ScriptDataValue<'a>
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub enum ScriptDataValue<'a> {
+  Number,
+  Boolean,
+  String(&'a str),
+  Object,
+  MovieClip,
+  Null,
+  UNdefined,
+  Reference,
+  ECMAArray,
+  StrictArray,
+  Date,
+  LongString(&'a str),
+}
+
+/*
+named!(pub script_data_object<ScriptDataObject>,
+  chain!(
+    name: script_data_string ~
+    data: script_data_value  ,
+    || {
+      ScriptDataObject {
+        name: name,
+        data: data
+      }
+    }
+  )
+);
+
+pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],()> {
+  match be_u24(input) {
+    IResult::Done(i,o) => if o == 9 {
+      IResult::Done(i,())
+    } else {
+      IResult::Error(Err::Code(ErrorKind::Tag))
+    },
+    e => e
+  }
+}
+
+named!(pub script_data_string<&str>, map_res!(length_bytes!(be_u16), from_utf8));
+named!(pub script_data_long_string<&str>, map_res!(length_bytes!(be_u32), from_utf8));
+
+named!(pub script_data_value<ScriptDataValue>, );
+
+#[derive(Debug,PartialEq,Eq)]
+pub struct ScriptData {
+  objects: Vec<ScriptDataObject>
+}
+*/
+
 #[allow(non_uppercase_globals)]
 #[cfg(test)]
 mod tests {

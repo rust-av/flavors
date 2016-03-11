@@ -181,6 +181,65 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
   })
 }
 
+#[derive(Debug,PartialEq,Eq)]
+pub enum FrameType {
+  Key,
+  Inter,
+  DisposableInter,
+  Generated,
+  Command,
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub enum CodecId {
+  JPEG,
+  H263,
+  SCREEN,
+  VP6,
+  VP6A,
+  SCREEN2,
+  H264,
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub struct VideoData<'a> {
+  frame_type: FrameType,
+  codec_id:   CodecId,
+  video_data: &'a [u8]
+}
+
+pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
+  if input.len() < size {
+    return IResult::Incomplete(Needed::Size(size));
+  }
+
+  let (remaining, (frame_type, codec_id)) = try_parse!(input, bits!(
+    tuple!(
+      switch!(take_bits!(u8, 4),
+        1  => value!(FrameType::Key)
+      | 2  => value!(FrameType::Inter)
+      | 3  => value!(FrameType::DisposableInter)
+      | 4  => value!(FrameType::Generated)
+      | 5  => value!(FrameType::Command)
+      ),
+      switch!(take_bits!(u8, 4),
+        1 => value!(CodecId::JPEG)
+      | 2 => value!(CodecId::H263)
+      | 3 => value!(CodecId::SCREEN)
+      | 4 => value!(CodecId::VP6)
+      | 5 => value!(CodecId::VP6A)
+      | 6 => value!(CodecId::SCREEN2)
+      | 7 => value!(CodecId::H264)
+      )
+    )
+  ));
+
+  IResult::Done(&input[size..], VideoData {
+    frame_type: frame_type,
+    codec_id:   codec_id,
+    video_data: &input[1..size]
+  })
+}
 #[allow(non_uppercase_globals)]
 #[cfg(test)]
 mod tests {
@@ -215,7 +274,7 @@ mod tests {
 
   #[test]
   fn first_tag_headers() {
-    // starts at 99 bytes (header) + 4 (size of previous tag)
+    // starts at 9 bytes (header) + 4 (size of previous tag)
     // header is 11 bytes long
     assert_eq!(
       tag_header(&zelda[13..24]),
@@ -238,7 +297,7 @@ mod tests {
   }
 
   #[test]
-  fn first_audio_tags() {
+  fn audio_tags() {
     let tag_start = 24+537+4;
     println!("size of previous tag: {:?}", be_u32(&zelda[24+537..tag_start]));
     assert_eq!(
@@ -287,4 +346,30 @@ mod tests {
         }
     ));
   }
+
+  #[test]
+  fn video_tags() {
+    let tag_start = 24;
+    assert_eq!(
+      video_data(&zelda[tag_start..tag_start+537], 537),
+      IResult::Done(
+        &b""[..],
+        VideoData {
+          frame_type: FrameType::Key,
+          codec_id:   CodecId::H263,
+          video_data: &zelda[tag_start+1..tag_start+537]
+        }
+    ));
+    assert_eq!(
+      video_data(&zelda[tag_start..tag_start+2984], 2984),
+      IResult::Done(
+        &b""[..],
+        VideoData {
+          frame_type: FrameType::Key,
+          codec_id:   CodecId::H263,
+          video_data: &zelda[tag_start+1..tag_start+2984]
+        }
+    ));
+  }
+
 }

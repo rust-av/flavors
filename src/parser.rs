@@ -415,36 +415,32 @@ named!(pub script_data_ECMA_array<Vec<ScriptDataObject> >,
     script_data_objects
   )
 );
-named!(pub script_data_strict_array<Vec<ScriptDataObject> >,
-  chain!(
-    size: take_bits!(u32, 32) ~
-    many_m_n!(0, size, script_data_value)
-  )
-);
+pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {
+  let (i, size) = try_parse!(input, take_bits!(u32, 32));
+  many_m_n!(i, 0, size, script_data_value)
+}
 
 // 9 is the end marker of Object type
 named!(pub script_data_value<ScriptDataValue>,
-  chain!(
-    tag_type: take_bits!(u8, 8) ~
-    data: switch!(tag_type,
-      0  => value!(ScriptDataValue::Number(take_bits!(f64, 64)))
-      | 1  => value!(ScriptDataValue::Boolean(take_bits!(u8, 8)))
-      | 2  => value!(ScriptDataValue::String(script_data_string))
-      | 3  => value!(ScriptDataValue::Object(script_data_objects))
-      | 4  => value!(ScriptDataValue::MovieClip)
-      | 5  => value!(ScriptDataValue::Null) // to remove
-      | 6  => value!(ScriptDataValue::UNdefined) // to remove
-      | 7  => value!(ScriptDataValue::Reference(take_bits!(u16, 16)))
-      | 8  => value!(ScriptDataValue::ECMAArray(script_data_ECMA_array))
-      | 10 => value!(ScriptDataValue::StrictArray(script_data_strict_array))
-      | 11 => value!(ScriptDataValue::Date(script_data_date))
-      | 12 => value!(ScriptDataValue::LongString(script_data_long_string)))
+  switch!(take_bits!(u8, 8),
+      0  => map!(take_bits!(f64, 64), ScriptDataValue::Number)
+    | 1  => map!(take_bits!(u8, 8), ScriptDataValue::Boolean)
+    | 2  => map!(script_data_string, ScriptDataValue::String)
+    | 3  => map!(script_data_objects, ScriptDataValue::Object)
+    | 4  => value!(ScriptDataValue::MovieClip)
+    | 5  => value!(ScriptDataValue::Null) // to remove
+    | 6  => value!(ScriptDataValue::UNdefined) // to remove
+    | 7  => map!(take_bits!(u16, 16), ScriptDataValue::Reference)
+    | 8  => map!(script_data_ECMA_array, ScriptDataValue::ECMAArray)
+    | 10 => map!(script_data_strict_array, ScriptDataValue::StrictArray)
+    | 11 => map!(script_data_date, ScriptDataValue::Date)
+    | 12 => map!(script_data_long_string, ScriptDataValue::LongString)
   )
 );
 
 #[derive(Debug,PartialEq,Eq)]
-pub struct ScriptData {
-  objects: Vec<ScriptDataObject>,
+pub struct ScriptData<'a> {
+  objects: Vec<ScriptDataObject<'a>>,
 }
 
 #[allow(non_uppercase_globals)]

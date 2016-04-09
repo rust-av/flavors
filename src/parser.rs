@@ -617,15 +617,15 @@ mod tests {
 
   #[test]
   fn script_tags() {
-    let tag_start = 24;
-    println!("--> {:?}", &zelda[tag_start+537..tag_start+539]);
-    match be_u16(&zelda[tag_start+537..]) {
+    let tag_start = 24+537+4;
+    println!("--> {:?}", &zelda[tag_start..tag_start+4]);
+    match be_u16(&zelda[tag_start..]) {
       IResult::Done(_,y) => {
         println!("--> {:?}", y);
       }
       _ => {}
     };
-    match script_data_objects(&zelda[tag_start+537..]) {
+    match script_data_objects(&zelda[tag_start..]) {
       IResult::Done(x,y) => {
         assert_eq!(
           (&x[..20], y) as (&[u8], Vec<ScriptDataObject>),

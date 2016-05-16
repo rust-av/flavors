@@ -1,3 +1,3 @@
 #[macro_use] extern crate nom;
 
-mod parser;
+pub mod parser;

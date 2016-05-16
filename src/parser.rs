@@ -14,10 +14,10 @@ pub fn be_u24(i: &[u8]) -> IResult<&[u8], u32> {
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct Header {
-  version: u8,
-  audio:   bool,
-  video:   bool,
-  offset:  u32,
+  pub version: u8,
+  pub audio:   bool,
+  pub video:   bool,
+  pub offset:  u32,
 }
 
 named!(pub header<Header>,
@@ -46,10 +46,10 @@ pub enum TagType {
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct TagHeader {
-  tag_type:  TagType,
-  data_size: u32,
-  timestamp: u32,
-  stream_id: u32,
+  pub tag_type:  TagType,
+  pub data_size: u32,
+  pub timestamp: u32,
+  pub stream_id: u32,
 }
 
 #[derive(Debug,PartialEq,Eq)]
@@ -62,8 +62,8 @@ pub enum TagData {
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct Tag {
-  header: TagHeader,
-  data: TagData,
+  pub header: TagHeader,
+  pub data:   TagData,
 }
 
 named!(pub tag_header<TagHeader>,

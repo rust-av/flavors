@@ -184,10 +184,10 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct AudioDataHeader {
-  sound_format: SoundFormat,
-  sound_rate:   SoundRate,
-  sound_size:   SoundSize,
-  sound_type:   SoundType,
+  pub sound_format: SoundFormat,
+  pub sound_rate:   SoundRate,
+  pub sound_size:   SoundSize,
+  pub sound_type:   SoundType,
 }
 
 pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
@@ -300,8 +300,8 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct VideoDataHeader {
-  frame_type: FrameType,
-  codec_id:   CodecId,
+  pub frame_type: FrameType,
+  pub codec_id:   CodecId,
 }
 
 pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {

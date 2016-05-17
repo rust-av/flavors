@@ -37,7 +37,7 @@ named!(pub header<Header>,
   )
 );
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum TagType {
   Audio,
   Video,
@@ -52,7 +52,7 @@ pub struct TagHeader {
   pub stream_id: u32,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum TagData {
   //Audio(AudioData),
   Audio,
@@ -88,7 +88,7 @@ named!(pub tag_header<TagHeader>,
   )
 );
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum SoundFormat {
   PCM_BE,
   ADPCM,
@@ -105,7 +105,7 @@ pub enum SoundFormat {
   DEVICE_SPECIFIC,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum SoundRate {
   _5_5KHZ,
   _11KHZ,
@@ -113,13 +113,13 @@ pub enum SoundRate {
   _44KHZ,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum SoundSize {
   Snd8bit,
   Snd16bit,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum SoundType {
   SndMono,
   SndStereo,
@@ -238,7 +238,7 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
 }
 
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum FrameType {
   Key,
   Inter,
@@ -247,7 +247,7 @@ pub enum FrameType {
   Command,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum CodecId {
   JPEG,
   H263,

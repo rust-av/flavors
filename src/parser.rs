@@ -183,6 +183,62 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
 }
 
 #[derive(Debug,PartialEq,Eq)]
+pub struct AudioDataHeader {
+  sound_format: SoundFormat,
+  sound_rate:   SoundRate,
+  sound_size:   SoundSize,
+  sound_type:   SoundType,
+}
+
+pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
+  if input.len() < 1 {
+    return IResult::Incomplete(Needed::Size(1));
+  }
+
+  let (remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
+    tuple!(
+      switch!(take_bits!(u8, 4),
+        0  => value!(SoundFormat::PCM_BE)
+      | 1  => value!(SoundFormat::ADPCM)
+      | 2  => value!(SoundFormat::MP3)
+      | 3  => value!(SoundFormat::PCM_LE)
+      | 4  => value!(SoundFormat::NELLYMOSER_16KHZ_MONO)
+      | 5  => value!(SoundFormat::NELLYMOSER_8KHZ_MONO)
+      | 6  => value!(SoundFormat::NELLYMOSER)
+      | 7  => value!(SoundFormat::PCM_ALAW)
+      | 8  => value!(SoundFormat::PCM_ULAW)
+      | 10 => value!(SoundFormat::AAC)
+      | 11 => value!(SoundFormat::SPEEX)
+      | 14 => value!(SoundFormat::MP3_8KHZ)
+      | 15 => value!(SoundFormat::DEVICE_SPECIFIC)
+      ),
+      switch!(take_bits!(u8, 2),
+        0 => value!(SoundRate::_5_5KHZ)
+      | 1 => value!(SoundRate::_11KHZ)
+      | 2 => value!(SoundRate::_22KHZ)
+      | 3 => value!(SoundRate::_44KHZ)
+      ),
+      switch!(take_bits!(u8, 1),
+        0 => value!(SoundSize::Snd8bit)
+      | 1 => value!(SoundSize::Snd16bit)
+      ),
+      switch!(take_bits!(u8, 1),
+        0 => value!(SoundType::SndMono)
+      | 1 => value!(SoundType::SndStereo)
+      )
+    )
+  ));
+
+  IResult::Done(&input[1..], AudioDataHeader {
+    sound_format: sformat,
+    sound_rate:   srate,
+    sound_size:   ssize,
+    sound_type:   stype,
+  })
+}
+
+
+#[derive(Debug,PartialEq,Eq)]
 pub enum FrameType {
   Key,
   Inter,
@@ -239,6 +295,44 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
     frame_type: frame_type,
     codec_id:   codec_id,
     video_data: &input[1..size]
+  })
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub struct VideoDataHeader {
+  frame_type: FrameType,
+  codec_id:   CodecId,
+}
+
+pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
+  if input.len() < 1 {
+    return IResult::Incomplete(Needed::Size(1));
+  }
+
+  let (remaining, (frame_type, codec_id)) = try_parse!(input, bits!(
+    tuple!(
+      switch!(take_bits!(u8, 4),
+        1  => value!(FrameType::Key)
+      | 2  => value!(FrameType::Inter)
+      | 3  => value!(FrameType::DisposableInter)
+      | 4  => value!(FrameType::Generated)
+      | 5  => value!(FrameType::Command)
+      ),
+      switch!(take_bits!(u8, 4),
+        1 => value!(CodecId::JPEG)
+      | 2 => value!(CodecId::H263)
+      | 3 => value!(CodecId::SCREEN)
+      | 4 => value!(CodecId::VP6)
+      | 5 => value!(CodecId::VP6A)
+      | 6 => value!(CodecId::SCREEN2)
+      | 7 => value!(CodecId::H264)
+      )
+    )
+  ));
+
+  IResult::Done(&input[1..], VideoDataHeader {
+    frame_type: frame_type,
+    codec_id:   codec_id,
   })
 }
 

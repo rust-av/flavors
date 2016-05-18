@@ -81,7 +81,7 @@ named!(pub tag_header<TagHeader>,
       TagHeader {
         tag_type:  tag_type,
         data_size: data_size,
-        timestamp: (timestamp_extended as u32) << 24 + timestamp,
+        timestamp: ((timestamp_extended as u32) << 24) + timestamp,
         stream_id: stream_id,
       }
     }

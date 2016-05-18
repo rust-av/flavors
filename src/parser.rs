@@ -1,4 +1,4 @@
-use nom::{be_u8,be_u32,IResult,Needed,Err,ErrorKind};
+use nom::{be_u8,be_u16,be_i16,be_u32,be_f64,IResult,Needed,Err,ErrorKind};
 use std::str::from_utf8;
 
 /// Recognizes big endian unsigned 4 bytes integer
@@ -339,66 +339,151 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
 #[derive(Debug,PartialEq,Eq)]
 pub struct ScriptDataObject<'a> {
   name: &'a str,
-  data: ScriptDataValue<'a>
+  data: ScriptDataValue<'a>,
 }
 
 #[derive(Debug,PartialEq,Eq)]
+pub struct ScriptDataDate {
+  date_time: f64,
+  local_date_time_offset: i16, // SI16
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum ScriptDataValue<'a> {
-  Number,
-  Boolean,
+  Number(f64),
+  Boolean(bool),
   String(&'a str),
-  Object,
-  MovieClip,
+  Object(Vec<ScriptDataObject<'a>>),
+  MovieClip(&'a str),
   Null,
   UNdefined,
-  Reference,
-  ECMAArray,
-  StrictArray,
-  Date,
+  Reference(u16),
+  ECMAArray(Vec<ScriptDataObject<'a>>),
+  StrictArray(Vec<ScriptDataObject<'a>>),
+  Date(ScriptDataDate),
   LongString(&'a str),
 }
 
-/*
+trait OwnEq {
+  fn assert_receiver_is_total_eq(&self) {}
+}
+
+impl OwnEq for f64 {}
+
 named!(pub script_data_object<ScriptDataObject>,
   chain!(
     name: script_data_string ~
-    data: script_data_value  ,
+    data: get_data_value,
     || {
       ScriptDataObject {
         name: name,
-        data: data
+        data: data,
       }
     }
   )
 );
 
-pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],()> {
-  match be_u24(input) {
-    IResult::Done(i,o) => if o == 9 {
-      IResult::Done(i,())
-    } else {
-      IResult::Error(Err::Code(ErrorKind::Tag))
-    },
-    e => e
+pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],bool> {
+  if input.len() < 1 {
+    return IResult::Done(input,true)
+  } else {
+    match be_u24(input) {
+      IResult::Done(i,o) => {
+        IResult::Done(i,o == 9)
+        //IResult::Error(Err::Code(ErrorKind::Tag))
+      },
+      IResult::Incomplete(i) => IResult::Incomplete(i),
+      IResult::Error(i) => IResult::Error(i),
+    }
   }
 }
 
 named!(pub script_data_string<&str>, map_res!(length_bytes!(be_u16), from_utf8));
 named!(pub script_data_long_string<&str>, map_res!(length_bytes!(be_u32), from_utf8));
+named!(pub script_data_date<ScriptDataDate>,
+  chain!(
+    date_time: be_f64 ~
+    local_date_time_offset: be_i16,
+    || {
+      ScriptDataDate {
+        date_time: date_time,
+        local_date_time_offset: local_date_time_offset,
+      }
+    }
+  )
+);
+named!(pub script_data_objects<Vec<ScriptDataObject> >,
+  terminated!(many0!(chain!(
+    name: script_data_string ~
+    value: get_data_value,
+    || {
+      ScriptDataObject {
+        name: name,
+        data: value,
+      }
+    })), script_data_object_end)
+  //terminated!(many0!(pair!(script_data_string, script_data_object)), script_data_object_end)
+);
+named!(pub script_data_ECMA_array<Vec<ScriptDataObject> >,
+  chain!(
+    be_u32 ~
+    v: script_data_objects,
+    || { v }
+  )
+);
+pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {
+  match be_u32(input) {
+    IResult::Done(i, o) => many_m_n!(i, 1, o as usize, script_data_object),
+    IResult::Incomplete(i) => IResult::Incomplete(i),
+    IResult::Error(i) => IResult::Error(i),
+  }
+}
 
-named!(pub script_data_value<ScriptDataValue>, );
+named!(pub get_data_value<ScriptDataValue>,
+  switch!(be_u8,
+      0  => map!(be_f64, |n| ScriptDataValue::Number(n))
+    | 1  => map!(be_u8, |n| ScriptDataValue::Boolean(n != 0))
+    | 2  => map!(script_data_string, |n| ScriptDataValue::String(n))
+    | 3  => map!(script_data_objects, |n| ScriptDataValue::Object(n))
+    | 4  => map!(script_data_string, |n| ScriptDataValue::MovieClip(n))
+    | 5  => value!(ScriptDataValue::Null) // to remove
+    | 6  => value!(ScriptDataValue::UNdefined) // to remove
+    | 7  => map!(be_u16, |n| ScriptDataValue::Reference(n))
+    | 8  => map!(script_data_ECMA_array, |n| ScriptDataValue::ECMAArray(n))
+    | 10 => map!(script_data_strict_array, |n| ScriptDataValue::StrictArray(n))
+    | 11 => map!(script_data_date, |n| ScriptDataValue::Date(n))
+    | 12 => map!(script_data_long_string, |n| ScriptDataValue::LongString(n))
+  )
+);
+
+// 9 is the end marker of Object type
+/*named!(pub script_data_value<Vec<ScriptDataValue> >,
+  terminated!(many0!(switch!(be_u8,
+      0  => map!(be_f64, |n| ScriptDataValue::Number(n))
+    | 1  => map!(be_u8, |n| ScriptDataValue::Boolean(n != 0))
+    | 2  => map!(script_data_string, |n| ScriptDataValue::String(n))
+    | 3  => map!(script_data_objects, |n| ScriptDataValue::Object(n))
+    | 4  => map!(script_data_string, |n| ScriptDataValue::MovieClip(n))
+    | 5  => value!(ScriptDataValue::Null) // to remove
+    | 6  => value!(ScriptDataValue::UNdefined) // to remove
+    | 7  => map!(be_u16, |n| ScriptDataValue::Reference(n))
+    | 8  => map!(script_data_ECMA_array, |n| ScriptDataValue::ECMAArray(n))
+    | 10 => map!(script_data_strict_array, |n| ScriptDataValue::StrictArray(n))
+    | 11 => map!(script_data_date, |n| ScriptDataValue::Date(n))
+    | 12 => map!(script_data_long_string, |n| ScriptDataValue::LongString(n))
+  )), script_data_object_end)
+);*/
 
 #[derive(Debug,PartialEq,Eq)]
-pub struct ScriptData {
-  objects: Vec<ScriptDataObject>
+pub struct ScriptData<'a> {
+  objects: Vec<ScriptDataObject<'a>>,
 }
-*/
 
 #[allow(non_uppercase_globals)]
 #[cfg(test)]
 mod tests {
   use super::*;
-  use nom::{IResult,be_u32,HexDisplay};
+  use nom::{IResult,be_u16,be_u32,HexDisplay};
 
   const zelda       : &'static [u8] = include_bytes!("../assets/zelda.flv");
   const zeldaHQ     : &'static [u8] = include_bytes!("../assets/zeldaHQ.flv");
@@ -524,6 +609,32 @@ mod tests {
           video_data: &zelda[tag_start+1..tag_start+2984]
         }
     ));
+  }
+
+  #[test]
+  fn script_tags() {
+    let tag_start = 24+537+4;
+    println!("--> {:?}", &zelda[tag_start..tag_start+4]);
+    match be_u16(&zelda[tag_start..]) {
+      IResult::Done(_,y) => {
+        println!("--> {:?}", y);
+      }
+      _ => {}
+    };
+    match script_data_objects(&zelda[tag_start..]) {
+      IResult::Done(x,y) => {
+        assert_eq!(
+          (&x[..20], y) as (&[u8], Vec<ScriptDataObject>),
+          (&b""[..], vec!(ScriptDataObject { name: "", data: ScriptDataValue::Null })));
+      }
+      _ => assert!(false),
+    }
+    /*assert_eq!(
+      script_data_value(&zelda[tag_start+2984..]),
+      IResult::Done(
+        &b""[..],
+        ScriptDataValue::Null
+    ));*/
   }
 
 }

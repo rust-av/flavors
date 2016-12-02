@@ -1,5 +1,4 @@
-use nom::{be_u8,be_u32,IResult,Needed,Err,ErrorKind};
-use std::str::from_utf8;
+use nom::{be_u8,be_u32,IResult,Needed};
 
 /// Recognizes big endian unsigned 4 bytes integer
 #[inline]
@@ -173,6 +172,8 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
     )
   ));
 
+  assert_eq!(size - 1, remaining.len());
+
   IResult::Done(&input[size..], AudioData {
     sound_format: sformat,
     sound_rate:   srate,
@@ -229,7 +230,9 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
     )
   ));
 
-  IResult::Done(&input[1..], AudioDataHeader {
+  assert_eq!(input.len() - 1, remaining.len());
+
+  IResult::Done(remaining, AudioDataHeader {
     sound_format: sformat,
     sound_rate:   srate,
     sound_size:   ssize,
@@ -291,6 +294,8 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
     )
   ));
 
+  assert_eq!(size - 1, remaining.len());
+
   IResult::Done(&input[size..], VideoData {
     frame_type: frame_type,
     codec_id:   codec_id,
@@ -330,7 +335,9 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
     )
   ));
 
-  IResult::Done(&input[1..], VideoDataHeader {
+  assert_eq!(input.len() - 1, remaining.len());
+
+  IResult::Done(remaining, VideoDataHeader {
     frame_type: frame_type,
     codec_id:   codec_id,
   })

@@ -20,19 +20,17 @@ pub struct Header {
 }
 
 named!(pub header<Header>,
-  chain!(
-             tag!("FLV") ~
-    version: be_u8       ~
-    flags:   be_u8       ~
-    offset:  be_u32      ,
-    || {
-      Header {
+  do_parse!(
+             tag!("FLV") >>
+    version: be_u8       >>
+    flags:   be_u8       >>
+    offset:  be_u32      >>
+    (Header {
         version: version,
         audio:   flags & 4 == 4,
         video:   flags & 1 == 1,
         offset:  offset
-      }
-    }
+    })
   )
 );
 
@@ -66,24 +64,22 @@ pub struct Tag {
 }
 
 named!(pub tag_header<TagHeader>,
-  chain!(
+  do_parse!(
     tag_type: switch!(be_u8,
       8  => value!(TagType::Audio) |
       9  => value!(TagType::Video) |
       18 => value!(TagType::Script)
-    )                                ~
-    data_size:          be_u24       ~
-    timestamp:          be_u24       ~
-    timestamp_extended: be_u8        ~
-    stream_id:          be_u24       ,
-    || {
-      TagHeader {
+    )                                >>
+    data_size:          be_u24       >>
+    timestamp:          be_u24       >>
+    timestamp_extended: be_u8        >>
+    stream_id:          be_u24       >>
+    (TagHeader {
         tag_type:  tag_type,
         data_size: data_size,
         timestamp: ((timestamp_extended as u32) << 24) + timestamp,
         stream_id: stream_id,
-      }
-    }
+    })
   )
 );
 

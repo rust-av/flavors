@@ -369,15 +369,13 @@ pub enum ScriptDataValue<'a> {
 }
 
 named!(pub script_data_object<ScriptDataObject>,
-  chain!(
-    name: script_data_string ~
-    data: get_data_value,
-    || {
-      ScriptDataObject {
+  do_parse!(
+    name: script_data_string >>
+    data: get_data_value     >>
+    (ScriptDataObject {
         name: name,
         data: data,
-      }
-    }
+    })
   )
 );
 
@@ -399,34 +397,31 @@ pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],bool> {
 named!(pub script_data_string<&str>, map_res!(length_bytes!(be_u16), from_utf8));
 named!(pub script_data_long_string<&str>, map_res!(length_bytes!(be_u32), from_utf8));
 named!(pub script_data_date<ScriptDataDate>,
-  chain!(
-    date_time: be_f64 ~
-    local_date_time_offset: be_i16,
-    || {
-      ScriptDataDate {
+  do_parse!(
+    date_time: be_f64               >>
+    local_date_time_offset: be_i16  >>
+    (ScriptDataDate {
         date_time: date_time,
         local_date_time_offset: local_date_time_offset,
-      }
-    }
+    })
   )
 );
 named!(pub script_data_objects<Vec<ScriptDataObject> >,
-  terminated!(many0!(chain!(
-    name: script_data_string ~
-    value: get_data_value,
-    || {
-      ScriptDataObject {
+  terminated!(many0!(do_parse!(
+    name: script_data_string >>
+    value: get_data_value    >>
+    (ScriptDataObject {
         name: name,
         data: value,
-      }
-    })), script_data_object_end)
+    })
+    )), script_data_object_end)
   //terminated!(many0!(pair!(script_data_string, script_data_object)), script_data_object_end)
 );
 named!(pub script_data_ECMA_array<Vec<ScriptDataObject> >,
-  chain!(
-    be_u32 ~
-    v: script_data_objects,
-    || { v }
+  do_parse!(
+    be_u32                 >>
+    v: script_data_objects >>
+    (v)
   )
 );
 pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {

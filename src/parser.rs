@@ -340,19 +340,19 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
   })
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Debug, PartialEq)]
 pub struct ScriptDataObject<'a> {
   name: &'a str,
   data: ScriptDataValue<'a>,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Debug, PartialEq)]
 pub struct ScriptDataDate {
   date_time: f64,
   local_date_time_offset: i16, // SI16
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum ScriptDataValue<'a> {
   Number(f64),
   Boolean(bool),
@@ -367,12 +367,6 @@ pub enum ScriptDataValue<'a> {
   Date(ScriptDataDate),
   LongString(&'a str),
 }
-
-trait OwnEq {
-  fn assert_receiver_is_total_eq(&self) {}
-}
-
-impl OwnEq for f64 {}
 
 named!(pub script_data_object<ScriptDataObject>,
   chain!(
@@ -478,7 +472,7 @@ named!(pub get_data_value<ScriptDataValue>,
   )), script_data_object_end)
 );*/
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Debug, PartialEq)]
 pub struct ScriptData<'a> {
   objects: Vec<ScriptDataObject<'a>>,
 }

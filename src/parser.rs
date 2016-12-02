@@ -1,7 +1,7 @@
 use nom::{be_u8,be_u16,be_i16,be_u32,be_f64,IResult,Needed};
 use std::str::from_utf8;
 
-/// Recognizes big endian unsigned 4 bytes integer
+/// Recognizes big endian unsigned 3 bytes integer
 #[inline]
 pub fn be_u24(i: &[u8]) -> IResult<&[u8], u32> {
   if i.len() < 3 {
@@ -360,7 +360,7 @@ pub enum ScriptDataValue<'a> {
   Object(Vec<ScriptDataObject<'a>>),
   MovieClip(&'a str),
   Null,
-  UNdefined,
+  Undefined,
   Reference(u16),
   ECMAArray(Vec<ScriptDataObject<'a>>),
   StrictArray(Vec<ScriptDataObject<'a>>),
@@ -379,19 +379,10 @@ named!(pub script_data_object<ScriptDataObject>,
   )
 );
 
-pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],bool> {
-  if input.len() < 1 {
-    return IResult::Done(input,true)
-  } else {
-    match be_u24(input) {
-      IResult::Done(i,o) => {
-        IResult::Done(i,o == 9)
-        //IResult::Error(Err::Code(ErrorKind::Tag))
-      },
-      IResult::Incomplete(i) => IResult::Incomplete(i),
-      IResult::Error(i) => IResult::Error(i),
-    }
-  }
+
+pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],&[u8]> {
+  static tag: &'static [u8] = &[0u8, 0u8, 9u8];
+  tag!(tag, input)
 }
 
 named!(pub script_data_string<&str>, map_res!(length_bytes!(be_u16), from_utf8));
@@ -415,7 +406,6 @@ named!(pub script_data_objects<Vec<ScriptDataObject> >,
         data: value,
     })
     )), script_data_object_end)
-  //terminated!(many0!(pair!(script_data_string, script_data_object)), script_data_object_end)
 );
 named!(pub script_data_ECMA_array<Vec<ScriptDataObject> >,
   do_parse!(
@@ -440,7 +430,7 @@ named!(pub get_data_value<ScriptDataValue>,
     | 3  => map!(script_data_objects, |n| ScriptDataValue::Object(n))
     | 4  => map!(script_data_string, |n| ScriptDataValue::MovieClip(n))
     | 5  => value!(ScriptDataValue::Null) // to remove
-    | 6  => value!(ScriptDataValue::UNdefined) // to remove
+    | 6  => value!(ScriptDataValue::Undefined) // to remove
     | 7  => map!(be_u16, |n| ScriptDataValue::Reference(n))
     | 8  => map!(script_data_ECMA_array, |n| ScriptDataValue::ECMAArray(n))
     | 10 => map!(script_data_strict_array, |n| ScriptDataValue::StrictArray(n))
@@ -448,24 +438,6 @@ named!(pub get_data_value<ScriptDataValue>,
     | 12 => map!(script_data_long_string, |n| ScriptDataValue::LongString(n))
   )
 );
-
-// 9 is the end marker of Object type
-/*named!(pub script_data_value<Vec<ScriptDataValue> >,
-  terminated!(many0!(switch!(be_u8,
-      0  => map!(be_f64, |n| ScriptDataValue::Number(n))
-    | 1  => map!(be_u8, |n| ScriptDataValue::Boolean(n != 0))
-    | 2  => map!(script_data_string, |n| ScriptDataValue::String(n))
-    | 3  => map!(script_data_objects, |n| ScriptDataValue::Object(n))
-    | 4  => map!(script_data_string, |n| ScriptDataValue::MovieClip(n))
-    | 5  => value!(ScriptDataValue::Null) // to remove
-    | 6  => value!(ScriptDataValue::UNdefined) // to remove
-    | 7  => map!(be_u16, |n| ScriptDataValue::Reference(n))
-    | 8  => map!(script_data_ECMA_array, |n| ScriptDataValue::ECMAArray(n))
-    | 10 => map!(script_data_strict_array, |n| ScriptDataValue::StrictArray(n))
-    | 11 => map!(script_data_date, |n| ScriptDataValue::Date(n))
-    | 12 => map!(script_data_long_string, |n| ScriptDataValue::LongString(n))
-  )), script_data_object_end)
-);*/
 
 #[derive(Debug, PartialEq)]
 pub struct ScriptData<'a> {
@@ -606,28 +578,58 @@ mod tests {
 
   #[test]
   fn script_tags() {
-    let tag_start = 24+537+4;
-    println!("--> {:?}", &zelda[tag_start..tag_start+4]);
-    match be_u16(&zelda[tag_start..]) {
-      IResult::Done(_,y) => {
-        println!("--> {:?}", y);
+    let tag_start = 25;
+    let tag_end = tag_start + 272;
+
+    match script_data_objects(&commercials[tag_start..tag_end]) {
+      IResult::Done(remaining,script) => {
+        // FIXME: Shouldn't terminated!() in script_data_objects() consume the terminator?!
+        // assert_eq!(remaining.len(), 0);
+        assert_eq!(remaining, [0, 0, 9]);
+        assert_eq!(script,
+          [ScriptDataObject {
+            name: "onMetaData",
+            data: ScriptDataValue::ECMAArray(
+              vec![
+                ScriptDataObject {
+                  name: "duration", data: ScriptDataValue::Number(28.133)
+                },
+                ScriptDataObject {
+                  name: "width", data: ScriptDataValue::Number(464.0)
+                },
+                ScriptDataObject {
+                  name: "height", data: ScriptDataValue::Number(348.0)
+                },
+                ScriptDataObject {
+                  name: "videodatarate", data: ScriptDataValue::Number(368.0)
+                },
+                ScriptDataObject {
+                  name: "framerate", data: ScriptDataValue::Number(30.0)
+                },
+                ScriptDataObject {
+                  name: "videocodecid", data: ScriptDataValue::Number(4.0)
+                },
+                ScriptDataObject {
+                  name: "audiodatarate", data: ScriptDataValue::Number(56.0)
+                },
+                ScriptDataObject {
+                  name: "audiodelay", data: ScriptDataValue::Number(0.0)
+                },
+                ScriptDataObject {
+                  name: "audiocodecid", data: ScriptDataValue::Number(2.0)
+                },
+                ScriptDataObject {
+                  name: "canSeekToEnd", data: ScriptDataValue::Number(1.0)
+                },
+                ScriptDataObject {
+                  name: "creationdate", data: ScriptDataValue::String("Thu Oct 04 18:37:42 2007\n")
+                }
+              ])
+          }
+        ]);
       }
-      _ => {}
-    };
-    match script_data_objects(&zelda[tag_start..]) {
-      IResult::Done(x,y) => {
-        assert_eq!(
-          (&x[..20], y) as (&[u8], Vec<ScriptDataObject>),
-          (&b""[..], vec!(ScriptDataObject { name: "", data: ScriptDataValue::Null })));
-      }
-      _ => assert!(false),
+      _ => unreachable!(),
     }
-    /*assert_eq!(
-      script_data_value(&zelda[tag_start+2984..]),
-      IResult::Done(
-        &b""[..],
-        ScriptDataValue::Null
-    ));*/
   }
 
 }

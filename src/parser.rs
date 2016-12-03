@@ -341,15 +341,9 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ScriptDataObject<'a> {
+pub struct ScriptData<'a> {
   name: &'a str,
-  data: ScriptDataValue<'a>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct ScriptDataDate {
-  date_time: f64,
-  local_date_time_offset: i16, // SI16
+  arguments: ScriptDataValue<'a>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -368,61 +362,33 @@ pub enum ScriptDataValue<'a> {
   LongString(&'a str),
 }
 
-named!(pub script_data_object<ScriptDataObject>,
-  do_parse!(
-    name: script_data_string >>
-    data: get_data_value     >>
-    (ScriptDataObject {
-        name: name,
-        data: data,
-    })
-  )
-);
-
-
-pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],&[u8]> {
-  static tag: &'static [u8] = &[0u8, 0u8, 9u8];
-  tag!(tag, input)
+#[derive(Debug, PartialEq)]
+pub struct ScriptDataObject<'a> {
+  name: &'a str,
+  data: ScriptDataValue<'a>,
 }
 
-named!(pub script_data_string<&str>, map_res!(length_bytes!(be_u16), from_utf8));
-named!(pub script_data_long_string<&str>, map_res!(length_bytes!(be_u32), from_utf8));
-named!(pub script_data_date<ScriptDataDate>,
-  do_parse!(
-    date_time: be_f64               >>
-    local_date_time_offset: be_i16  >>
-    (ScriptDataDate {
-        date_time: date_time,
-        local_date_time_offset: local_date_time_offset,
-    })
-  )
-);
-named!(pub script_data_objects<Vec<ScriptDataObject> >,
-  terminated!(many0!(do_parse!(
-    name: script_data_string >>
-    value: get_data_value    >>
-    (ScriptDataObject {
-        name: name,
-        data: value,
-    })
-    )), script_data_object_end)
-);
-named!(pub script_data_ECMA_array<Vec<ScriptDataObject> >,
-  do_parse!(
-    be_u32                 >>
-    v: script_data_objects >>
-    (v)
-  )
-);
-pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {
-  match be_u32(input) {
-    IResult::Done(i, o) => many_m_n!(i, 1, o as usize, script_data_object),
-    IResult::Incomplete(i) => IResult::Incomplete(i),
-    IResult::Error(i) => IResult::Error(i),
-  }
+#[derive(Debug, PartialEq)]
+pub struct ScriptDataDate {
+  date_time: f64,
+  local_date_time_offset: i16, // SI16
 }
 
-named!(pub get_data_value<ScriptDataValue>,
+static script_data_name_tag: &'static [u8] = &[2];
+named!(pub script_data<ScriptData>,
+  do_parse!(
+    // Must start with a string, i.e. 2
+    tag!(script_data_name_tag)   >>
+    name: script_data_string     >>
+    arguments: script_data_value >>
+    (ScriptData {
+        name: name,
+        arguments: arguments,
+    })
+    )
+);
+
+named!(pub script_data_value<ScriptDataValue>,
   switch!(be_u8,
       0  => map!(be_f64, |n| ScriptDataValue::Number(n))
     | 1  => map!(be_u8, |n| ScriptDataValue::Boolean(n != 0))
@@ -439,16 +405,67 @@ named!(pub get_data_value<ScriptDataValue>,
   )
 );
 
-#[derive(Debug, PartialEq)]
-pub struct ScriptData<'a> {
-  objects: Vec<ScriptDataObject<'a>>,
+named!(pub script_data_objects<Vec<ScriptDataObject> >,
+  terminated!(many0!(do_parse!(
+    name: script_data_string >>
+    value: script_data_value >>
+    (ScriptDataObject {
+        name: name,
+        data: value,
+    })
+    )), script_data_object_end)
+);
+
+named!(pub script_data_object<ScriptDataObject>,
+  do_parse!(
+    name: script_data_string >>
+    data: script_data_value  >>
+    (ScriptDataObject {
+        name: name,
+        data: data,
+    })
+  )
+);
+
+static script_data_object_end_terminator: &'static [u8] = &[0, 0, 9];
+pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],&[u8]> {
+  tag!(input, script_data_object_end_terminator)
+}
+
+named!(pub script_data_string<&str>, map_res!(length_bytes!(be_u16), from_utf8));
+named!(pub script_data_long_string<&str>, map_res!(length_bytes!(be_u32), from_utf8));
+named!(pub script_data_date<ScriptDataDate>,
+  do_parse!(
+    date_time: be_f64               >>
+    local_date_time_offset: be_i16  >>
+    (ScriptDataDate {
+        date_time: date_time,
+        local_date_time_offset: local_date_time_offset,
+    })
+  )
+);
+
+named!(pub script_data_ECMA_array<Vec<ScriptDataObject> >,
+  do_parse!(
+    be_u32                 >>
+    v: script_data_objects >>
+    (v)
+  )
+);
+
+pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {
+  match be_u32(input) {
+    IResult::Done(i, o) => many_m_n!(i, 1, o as usize, script_data_object),
+    IResult::Incomplete(i) => IResult::Incomplete(i),
+    IResult::Error(i) => IResult::Error(i),
+  }
 }
 
 #[allow(non_uppercase_globals)]
 #[cfg(test)]
 mod tests {
   use super::*;
-  use nom::{IResult,be_u16,be_u32,HexDisplay};
+  use nom::{IResult,be_u32,HexDisplay};
 
   const zelda       : &'static [u8] = include_bytes!("../assets/zelda.flv");
   const zeldaHQ     : &'static [u8] = include_bytes!("../assets/zeldaHQ.flv");
@@ -578,18 +595,16 @@ mod tests {
 
   #[test]
   fn script_tags() {
-    let tag_start = 25;
-    let tag_end = tag_start + 272;
+    let tag_start = 24;
+    let tag_end = tag_start + 273;
 
-    match script_data_objects(&commercials[tag_start..tag_end]) {
-      IResult::Done(remaining,script) => {
-        // FIXME: Shouldn't terminated!() in script_data_objects() consume the terminator?!
-        // assert_eq!(remaining.len(), 0);
-        assert_eq!(remaining, [0, 0, 9]);
-        assert_eq!(script,
-          [ScriptDataObject {
+    match script_data(&commercials[tag_start..tag_end]) {
+      IResult::Done(remaining,script_data) => {
+        assert_eq!(remaining.len(), 0);
+        assert_eq!(script_data,
+          ScriptData {
             name: "onMetaData",
-            data: ScriptDataValue::ECMAArray(
+            arguments: ScriptDataValue::ECMAArray(
               vec![
                 ScriptDataObject {
                   name: "duration", data: ScriptDataValue::Number(28.133)
@@ -624,9 +639,10 @@ mod tests {
                 ScriptDataObject {
                   name: "creationdate", data: ScriptDataValue::String("Thu Oct 04 18:37:42 2007\n")
                 }
-              ])
+              ]
+            )
           }
-        ]);
+        );
       }
       _ => unreachable!(),
     }

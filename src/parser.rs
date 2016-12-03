@@ -1,7 +1,7 @@
-use nom::{be_u8,be_u32,IResult,Needed,Err,ErrorKind};
+use nom::{be_u8,be_u16,be_i16,be_u32,be_f64,IResult,Needed};
 use std::str::from_utf8;
 
-/// Recognizes big endian unsigned 4 bytes integer
+/// Recognizes big endian unsigned 3 bytes integer
 #[inline]
 pub fn be_u24(i: &[u8]) -> IResult<&[u8], u32> {
   if i.len() < 3 {
@@ -21,19 +21,17 @@ pub struct Header {
 }
 
 named!(pub header<Header>,
-  chain!(
-             tag!("FLV") ~
-    version: be_u8       ~
-    flags:   be_u8       ~
-    offset:  be_u32      ,
-    || {
-      Header {
+  do_parse!(
+             tag!("FLV") >>
+    version: be_u8       >>
+    flags:   be_u8       >>
+    offset:  be_u32      >>
+    (Header {
         version: version,
         audio:   flags & 4 == 4,
         video:   flags & 1 == 1,
         offset:  offset
-      }
-    }
+    })
   )
 );
 
@@ -67,24 +65,22 @@ pub struct Tag {
 }
 
 named!(pub tag_header<TagHeader>,
-  chain!(
+  do_parse!(
     tag_type: switch!(be_u8,
       8  => value!(TagType::Audio) |
       9  => value!(TagType::Video) |
       18 => value!(TagType::Script)
-    )                                ~
-    data_size:          be_u24       ~
-    timestamp:          be_u24       ~
-    timestamp_extended: be_u8        ~
-    stream_id:          be_u24       ,
-    || {
-      TagHeader {
+    )                                >>
+    data_size:          be_u24       >>
+    timestamp:          be_u24       >>
+    timestamp_extended: be_u8        >>
+    stream_id:          be_u24       >>
+    (TagHeader {
         tag_type:  tag_type,
         data_size: data_size,
         timestamp: ((timestamp_extended as u32) << 24) + timestamp,
         stream_id: stream_id,
-      }
-    }
+    })
   )
 );
 
@@ -173,6 +169,8 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
     )
   ));
 
+  assert_eq!(size - 1, remaining.len());
+
   IResult::Done(&input[size..], AudioData {
     sound_format: sformat,
     sound_rate:   srate,
@@ -229,7 +227,9 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
     )
   ));
 
-  IResult::Done(&input[1..], AudioDataHeader {
+  assert_eq!(input.len() - 1, remaining.len());
+
+  IResult::Done(remaining, AudioDataHeader {
     sound_format: sformat,
     sound_rate:   srate,
     sound_size:   ssize,
@@ -291,6 +291,8 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
     )
   ));
 
+  assert_eq!(size - 1, remaining.len());
+
   IResult::Done(&input[size..], VideoData {
     frame_type: frame_type,
     codec_id:   codec_id,
@@ -330,69 +332,134 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
     )
   ));
 
-  IResult::Done(&input[1..], VideoDataHeader {
+  assert_eq!(input.len() - 1, remaining.len());
+
+  IResult::Done(remaining, VideoDataHeader {
     frame_type: frame_type,
     codec_id:   codec_id,
   })
 }
 
-#[derive(Debug,PartialEq,Eq)]
-pub struct ScriptDataObject<'a> {
+#[derive(Debug, PartialEq)]
+pub struct ScriptData<'a> {
   name: &'a str,
-  data: ScriptDataValue<'a>
+  arguments: ScriptDataValue<'a>,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Debug, PartialEq)]
 pub enum ScriptDataValue<'a> {
-  Number,
-  Boolean,
+  Number(f64),
+  Boolean(bool),
   String(&'a str),
-  Object,
-  MovieClip,
+  Object(Vec<ScriptDataObject<'a>>),
+  MovieClip(&'a str),
   Null,
-  UNdefined,
-  Reference,
-  ECMAArray,
-  StrictArray,
-  Date,
+  Undefined,
+  Reference(u16),
+  ECMAArray(Vec<ScriptDataObject<'a>>),
+  StrictArray(Vec<ScriptDataObject<'a>>),
+  Date(ScriptDataDate),
   LongString(&'a str),
 }
 
-/*
-named!(pub script_data_object<ScriptDataObject>,
-  chain!(
-    name: script_data_string ~
-    data: script_data_value  ,
-    || {
-      ScriptDataObject {
+#[derive(Debug, PartialEq)]
+pub struct ScriptDataObject<'a> {
+  name: &'a str,
+  data: ScriptDataValue<'a>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ScriptDataDate {
+  date_time: f64,
+  local_date_time_offset: i16, // SI16
+}
+
+static script_data_name_tag: &'static [u8] = &[2];
+named!(pub script_data<ScriptData>,
+  do_parse!(
+    // Must start with a string, i.e. 2
+    tag!(script_data_name_tag)   >>
+    name: script_data_string     >>
+    arguments: script_data_value >>
+    (ScriptData {
         name: name,
-        data: data
-      }
-    }
+        arguments: arguments,
+    })
+    )
+);
+
+named!(pub script_data_value<ScriptDataValue>,
+  switch!(be_u8,
+      0  => map!(be_f64, |n| ScriptDataValue::Number(n))
+    | 1  => map!(be_u8, |n| ScriptDataValue::Boolean(n != 0))
+    | 2  => map!(script_data_string, |n| ScriptDataValue::String(n))
+    | 3  => map!(script_data_objects, |n| ScriptDataValue::Object(n))
+    | 4  => map!(script_data_string, |n| ScriptDataValue::MovieClip(n))
+    | 5  => value!(ScriptDataValue::Null) // to remove
+    | 6  => value!(ScriptDataValue::Undefined) // to remove
+    | 7  => map!(be_u16, |n| ScriptDataValue::Reference(n))
+    | 8  => map!(script_data_ECMA_array, |n| ScriptDataValue::ECMAArray(n))
+    | 10 => map!(script_data_strict_array, |n| ScriptDataValue::StrictArray(n))
+    | 11 => map!(script_data_date, |n| ScriptDataValue::Date(n))
+    | 12 => map!(script_data_long_string, |n| ScriptDataValue::LongString(n))
   )
 );
 
-pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],()> {
-  match be_u24(input) {
-    IResult::Done(i,o) => if o == 9 {
-      IResult::Done(i,())
-    } else {
-      IResult::Error(Err::Code(ErrorKind::Tag))
-    },
-    e => e
-  }
+named!(pub script_data_objects<Vec<ScriptDataObject> >,
+  terminated!(many0!(do_parse!(
+    name: script_data_string >>
+    value: script_data_value >>
+    (ScriptDataObject {
+        name: name,
+        data: value,
+    })
+    )), script_data_object_end)
+);
+
+named!(pub script_data_object<ScriptDataObject>,
+  do_parse!(
+    name: script_data_string >>
+    data: script_data_value  >>
+    (ScriptDataObject {
+        name: name,
+        data: data,
+    })
+  )
+);
+
+static script_data_object_end_terminator: &'static [u8] = &[0, 0, 9];
+pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],&[u8]> {
+  tag!(input, script_data_object_end_terminator)
 }
 
 named!(pub script_data_string<&str>, map_res!(length_bytes!(be_u16), from_utf8));
 named!(pub script_data_long_string<&str>, map_res!(length_bytes!(be_u32), from_utf8));
+named!(pub script_data_date<ScriptDataDate>,
+  do_parse!(
+    date_time: be_f64               >>
+    local_date_time_offset: be_i16  >>
+    (ScriptDataDate {
+        date_time: date_time,
+        local_date_time_offset: local_date_time_offset,
+    })
+  )
+);
 
-named!(pub script_data_value<ScriptDataValue>, );
+named!(pub script_data_ECMA_array<Vec<ScriptDataObject> >,
+  do_parse!(
+    be_u32                 >>
+    v: script_data_objects >>
+    (v)
+  )
+);
 
-#[derive(Debug,PartialEq,Eq)]
-pub struct ScriptData {
-  objects: Vec<ScriptDataObject>
+pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {
+  match be_u32(input) {
+    IResult::Done(i, o) => many_m_n!(i, 1, o as usize, script_data_object),
+    IResult::Incomplete(i) => IResult::Incomplete(i),
+    IResult::Error(i) => IResult::Error(i),
+  }
 }
-*/
 
 #[allow(non_uppercase_globals)]
 #[cfg(test)]
@@ -524,6 +591,61 @@ mod tests {
           video_data: &zelda[tag_start+1..tag_start+2984]
         }
     ));
+  }
+
+  #[test]
+  fn script_tags() {
+    let tag_start = 24;
+    let tag_end = tag_start + 273;
+
+    match script_data(&commercials[tag_start..tag_end]) {
+      IResult::Done(remaining,script_data) => {
+        assert_eq!(remaining.len(), 0);
+        assert_eq!(script_data,
+          ScriptData {
+            name: "onMetaData",
+            arguments: ScriptDataValue::ECMAArray(
+              vec![
+                ScriptDataObject {
+                  name: "duration", data: ScriptDataValue::Number(28.133)
+                },
+                ScriptDataObject {
+                  name: "width", data: ScriptDataValue::Number(464.0)
+                },
+                ScriptDataObject {
+                  name: "height", data: ScriptDataValue::Number(348.0)
+                },
+                ScriptDataObject {
+                  name: "videodatarate", data: ScriptDataValue::Number(368.0)
+                },
+                ScriptDataObject {
+                  name: "framerate", data: ScriptDataValue::Number(30.0)
+                },
+                ScriptDataObject {
+                  name: "videocodecid", data: ScriptDataValue::Number(4.0)
+                },
+                ScriptDataObject {
+                  name: "audiodatarate", data: ScriptDataValue::Number(56.0)
+                },
+                ScriptDataObject {
+                  name: "audiodelay", data: ScriptDataValue::Number(0.0)
+                },
+                ScriptDataObject {
+                  name: "audiocodecid", data: ScriptDataValue::Number(2.0)
+                },
+                ScriptDataObject {
+                  name: "canSeekToEnd", data: ScriptDataValue::Number(1.0)
+                },
+                ScriptDataObject {
+                  name: "creationdate", data: ScriptDataValue::String("Thu Oct 04 18:37:42 2007\n")
+                }
+              ]
+            )
+          }
+        );
+      }
+      _ => unreachable!(),
+    }
   }
 
 }

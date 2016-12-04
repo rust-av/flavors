@@ -86,7 +86,7 @@ named!(pub tag_header<TagHeader>,
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum SoundFormat {
-  PCM_BE,
+  PCM_NE, // native endianness...
   ADPCM,
   MP3,
   PCM_LE,
@@ -138,7 +138,7 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
   let (remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
     tuple!(
       switch!(take_bits!(u8, 4),
-        0  => value!(SoundFormat::PCM_BE)
+        0  => value!(SoundFormat::PCM_NE)
       | 1  => value!(SoundFormat::ADPCM)
       | 2  => value!(SoundFormat::MP3)
       | 3  => value!(SoundFormat::PCM_LE)
@@ -196,7 +196,7 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
   let (remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
     tuple!(
       switch!(take_bits!(u8, 4),
-        0  => value!(SoundFormat::PCM_BE)
+        0  => value!(SoundFormat::PCM_NE)
       | 1  => value!(SoundFormat::ADPCM)
       | 2  => value!(SoundFormat::MP3)
       | 3  => value!(SoundFormat::PCM_LE)
@@ -250,12 +250,15 @@ pub enum FrameType {
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum CodecId {
   JPEG,
-  H263,
+  SORENSON_H263,
   SCREEN,
   VP6,
   VP6A,
   SCREEN2,
   H264,
+  // Not in FLV standard
+  H263,
+  MPEG4Part2, // MPEG-4 Part 2
 }
 
 #[derive(Debug,PartialEq,Eq)]
@@ -281,12 +284,14 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
       ),
       switch!(take_bits!(u8, 4),
         1 => value!(CodecId::JPEG)
-      | 2 => value!(CodecId::H263)
+      | 2 => value!(CodecId::SORENSON_H263)
       | 3 => value!(CodecId::SCREEN)
       | 4 => value!(CodecId::VP6)
       | 5 => value!(CodecId::VP6A)
       | 6 => value!(CodecId::SCREEN2)
       | 7 => value!(CodecId::H264)
+      | 8 => value!(CodecId::H263)
+      | 9 => value!(CodecId::MPEG4Part2)
       )
     )
   ));
@@ -322,12 +327,14 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
       ),
       switch!(take_bits!(u8, 4),
         1 => value!(CodecId::JPEG)
-      | 2 => value!(CodecId::H263)
+      | 2 => value!(CodecId::SORENSON_H263)
       | 3 => value!(CodecId::SCREEN)
       | 4 => value!(CodecId::VP6)
       | 5 => value!(CodecId::VP6A)
       | 6 => value!(CodecId::SCREEN2)
       | 7 => value!(CodecId::H264)
+      | 8 => value!(CodecId::H263)
+      | 9 => value!(CodecId::MPEG4Part2)
       )
     )
   ));
@@ -577,7 +584,7 @@ mod tests {
         &b""[..],
         VideoData {
           frame_type: FrameType::Key,
-          codec_id:   CodecId::H263,
+          codec_id:   CodecId::SORENSON_H263,
           video_data: &zelda[tag_start+1..tag_start+537]
         }
     ));
@@ -587,7 +594,7 @@ mod tests {
         &b""[..],
         VideoData {
           frame_type: FrameType::Key,
-          codec_id:   CodecId::H263,
+          codec_id:   CodecId::SORENSON_H263,
           video_data: &zelda[tag_start+1..tag_start+2984]
         }
     ));

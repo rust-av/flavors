@@ -123,11 +123,11 @@ pub enum SoundType {
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct AudioData<'a> {
-  sound_format: SoundFormat,
-  sound_rate:   SoundRate,
-  sound_size:   SoundSize,
-  sound_type:   SoundType,
-  sound_data:   &'a [u8]
+  pub sound_format: SoundFormat,
+  pub sound_rate:   SoundRate,
+  pub sound_size:   SoundSize,
+  pub sound_type:   SoundType,
+  pub sound_data:   &'a [u8]
 }
 
 pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
@@ -260,9 +260,9 @@ pub enum CodecId {
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct VideoData<'a> {
-  frame_type: FrameType,
-  codec_id:   CodecId,
-  video_data: &'a [u8]
+  pub frame_type: FrameType,
+  pub codec_id:   CodecId,
+  pub video_data: &'a [u8]
 }
 
 pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
@@ -342,8 +342,8 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
 
 #[derive(Debug, PartialEq)]
 pub struct ScriptData<'a> {
-  name: &'a str,
-  arguments: ScriptDataValue<'a>,
+  pub name: &'a str,
+  pub arguments: ScriptDataValue<'a>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -364,14 +364,14 @@ pub enum ScriptDataValue<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct ScriptDataObject<'a> {
-  name: &'a str,
-  data: ScriptDataValue<'a>,
+  pub name: &'a str,
+  pub data: ScriptDataValue<'a>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ScriptDataDate {
-  date_time: f64,
-  local_date_time_offset: i16, // SI16
+  pub date_time: f64,
+  pub local_date_time_offset: i16, // SI16
 }
 
 static script_data_name_tag: &'static [u8] = &[2];

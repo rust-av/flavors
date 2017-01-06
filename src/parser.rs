@@ -12,6 +12,13 @@ pub fn be_u24(i: &[u8]) -> IResult<&[u8], u32> {
   }
 }
 
+/// Recognizes big endian signed 3 bytes integer
+#[inline]
+pub fn be_i24(i: &[u8]) -> IResult<&[u8], i32> {
+  // Same as the unsigned version but we need to sign-extend manually here
+  map!(i, be_u24, | x | if x & 0x80_00_00 != 0 { (x | 0xff_00_00_00) as i32 } else { x as i32 })
+}
+
 #[derive(Debug,PartialEq,Eq)]
 pub struct Header {
   pub version: u8,
@@ -86,7 +93,7 @@ named!(pub tag_header<TagHeader>,
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum SoundFormat {
-  PCM_BE,
+  PCM_NE, // native endianness...
   ADPCM,
   MP3,
   PCM_LE,
@@ -121,13 +128,61 @@ pub enum SoundType {
   SndStereo,
 }
 
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum AACPacketType {
+  SequenceHeader,
+  Raw,
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub struct AACAudioPacketHeader {
+  pub packet_type: AACPacketType,
+}
+
+named!(pub aac_audio_packet_header<AACAudioPacketHeader>,
+  do_parse!(
+    packet_type: switch!(be_u8,
+      0  => value!(AACPacketType::SequenceHeader) |
+      1  => value!(AACPacketType::Raw)
+    )                                >>
+    (AACAudioPacketHeader {
+        packet_type: packet_type,
+    })
+  )
+);
+
+#[derive(Debug,PartialEq,Eq)]
+pub struct AACAudioPacket<'a> {
+  pub packet_type: AACPacketType,
+  pub aac_data:    &'a [u8]
+}
+
+pub fn aac_audio_packet(input: &[u8], size: usize) -> IResult<&[u8], AACAudioPacket> {
+  if input.len() < size {
+    return IResult::Incomplete(Needed::Size(size));
+  }
+
+  let (remaining, packet_type) = try_parse!(input, switch!(be_u8,
+      0  => value!(AACPacketType::SequenceHeader) |
+      1  => value!(AACPacketType::Raw)
+    )
+  );
+
+  assert_eq!(size - 1, remaining.len());
+
+  IResult::Done(&input[size..], AACAudioPacket {
+    packet_type: packet_type,
+    aac_data:    &input[1..size]
+  })
+}
+
 #[derive(Debug,PartialEq,Eq)]
 pub struct AudioData<'a> {
-  sound_format: SoundFormat,
-  sound_rate:   SoundRate,
-  sound_size:   SoundSize,
-  sound_type:   SoundType,
-  sound_data:   &'a [u8]
+  pub sound_format: SoundFormat,
+  pub sound_rate:   SoundRate,
+  pub sound_size:   SoundSize,
+  pub sound_type:   SoundType,
+  pub sound_data:   &'a [u8]
 }
 
 pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
@@ -138,7 +193,7 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
   let (remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
     tuple!(
       switch!(take_bits!(u8, 4),
-        0  => value!(SoundFormat::PCM_BE)
+        0  => value!(SoundFormat::PCM_NE)
       | 1  => value!(SoundFormat::ADPCM)
       | 2  => value!(SoundFormat::MP3)
       | 3  => value!(SoundFormat::PCM_LE)
@@ -196,7 +251,7 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
   let (remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
     tuple!(
       switch!(take_bits!(u8, 4),
-        0  => value!(SoundFormat::PCM_BE)
+        0  => value!(SoundFormat::PCM_NE)
       | 1  => value!(SoundFormat::ADPCM)
       | 2  => value!(SoundFormat::MP3)
       | 3  => value!(SoundFormat::PCM_LE)
@@ -250,19 +305,80 @@ pub enum FrameType {
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum CodecId {
   JPEG,
-  H263,
+  SORENSON_H263,
   SCREEN,
   VP6,
   VP6A,
   SCREEN2,
   H264,
+  // Not in FLV standard
+  H263,
+  MPEG4Part2, // MPEG-4 Part 2
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum AVCPacketType {
+  SequenceHeader,
+  NALU,
+  EndOfSequence,
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub struct AVCVideoPacketHeader {
+  pub packet_type:      AVCPacketType,
+  pub composition_time: i32,
+}
+
+named!(pub avc_video_packet_header<AVCVideoPacketHeader>,
+  do_parse!(
+    packet_type: switch!(be_u8,
+      0  => value!(AVCPacketType::SequenceHeader) |
+      1  => value!(AVCPacketType::NALU) |
+      2  => value!(AVCPacketType::EndOfSequence)
+    )                                >>
+    composition_time:   be_i24       >>
+    (AVCVideoPacketHeader {
+        packet_type:      packet_type,
+        composition_time: composition_time,
+    })
+  )
+);
+
+#[derive(Debug,PartialEq,Eq)]
+pub struct AVCVideoPacket<'a> {
+  pub packet_type:      AVCPacketType,
+  pub composition_time: i32,
+  pub avc_data:         &'a [u8]
+}
+
+pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPacket> {
+  if input.len() < size {
+    return IResult::Incomplete(Needed::Size(size));
+  }
+
+  let (remaining, (packet_type, composition_time)) = try_parse!(input, tuple!(
+    switch!(be_u8,
+      0  => value!(AVCPacketType::SequenceHeader) |
+      1  => value!(AVCPacketType::NALU) |
+      2  => value!(AVCPacketType::EndOfSequence)
+    ),
+    be_i24
+  ));
+
+  assert_eq!(size - 4, remaining.len());
+
+  IResult::Done(&input[size..], AVCVideoPacket {
+    packet_type:      packet_type,
+    composition_time: composition_time,
+    avc_data:         &input[4..size]
+  })
 }
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct VideoData<'a> {
-  frame_type: FrameType,
-  codec_id:   CodecId,
-  video_data: &'a [u8]
+  pub frame_type: FrameType,
+  pub codec_id:   CodecId,
+  pub video_data: &'a [u8]
 }
 
 pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
@@ -281,12 +397,14 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
       ),
       switch!(take_bits!(u8, 4),
         1 => value!(CodecId::JPEG)
-      | 2 => value!(CodecId::H263)
+      | 2 => value!(CodecId::SORENSON_H263)
       | 3 => value!(CodecId::SCREEN)
       | 4 => value!(CodecId::VP6)
       | 5 => value!(CodecId::VP6A)
       | 6 => value!(CodecId::SCREEN2)
       | 7 => value!(CodecId::H264)
+      | 8 => value!(CodecId::H263)
+      | 9 => value!(CodecId::MPEG4Part2)
       )
     )
   ));
@@ -322,12 +440,14 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
       ),
       switch!(take_bits!(u8, 4),
         1 => value!(CodecId::JPEG)
-      | 2 => value!(CodecId::H263)
+      | 2 => value!(CodecId::SORENSON_H263)
       | 3 => value!(CodecId::SCREEN)
       | 4 => value!(CodecId::VP6)
       | 5 => value!(CodecId::VP6A)
       | 6 => value!(CodecId::SCREEN2)
       | 7 => value!(CodecId::H264)
+      | 8 => value!(CodecId::H263)
+      | 9 => value!(CodecId::MPEG4Part2)
       )
     )
   ));
@@ -342,8 +462,8 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
 
 #[derive(Debug, PartialEq)]
 pub struct ScriptData<'a> {
-  name: &'a str,
-  arguments: ScriptDataValue<'a>,
+  pub name: &'a str,
+  pub arguments: ScriptDataValue<'a>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -364,14 +484,14 @@ pub enum ScriptDataValue<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct ScriptDataObject<'a> {
-  name: &'a str,
-  data: ScriptDataValue<'a>,
+  pub name: &'a str,
+  pub data: ScriptDataValue<'a>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ScriptDataDate {
-  date_time: f64,
-  local_date_time_offset: i16, // SI16
+  pub date_time: f64,
+  pub local_date_time_offset: i16, // SI16
 }
 
 static script_data_name_tag: &'static [u8] = &[2];
@@ -577,7 +697,7 @@ mod tests {
         &b""[..],
         VideoData {
           frame_type: FrameType::Key,
-          codec_id:   CodecId::H263,
+          codec_id:   CodecId::SORENSON_H263,
           video_data: &zelda[tag_start+1..tag_start+537]
         }
     ));
@@ -587,7 +707,7 @@ mod tests {
         &b""[..],
         VideoData {
           frame_type: FrameType::Key,
-          codec_id:   CodecId::H263,
+          codec_id:   CodecId::SORENSON_H263,
           video_data: &zelda[tag_start+1..tag_start+2984]
         }
     ));

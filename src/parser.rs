@@ -477,7 +477,7 @@ pub enum ScriptDataValue<'a> {
   Undefined,
   Reference(u16),
   ECMAArray(Vec<ScriptDataObject<'a>>),
-  StrictArray(Vec<ScriptDataObject<'a>>),
+  StrictArray(Vec<ScriptDataValue<'a>>),
   Date(ScriptDataDate),
   LongString(&'a str),
 }
@@ -573,9 +573,9 @@ named!(pub script_data_ECMA_array<Vec<ScriptDataObject> >,
   )
 );
 
-pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {
+pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataValue>> {
   match be_u32(input) {
-    IResult::Done(i, o) => many_m_n!(i, 1, o as usize, script_data_object),
+    IResult::Done(i, o) => many_m_n!(i, 1, o as usize, script_data_value),
     IResult::Incomplete(i) => IResult::Incomplete(i),
     IResult::Error(i) => IResult::Error(i),
   }

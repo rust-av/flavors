@@ -702,13 +702,13 @@ mod tests {
         }
     ));
     assert_eq!(
-      video_data(&zelda[tag_start..tag_start+2984], 2984),
+      video_data(&zeldaHQ[tag_start..tag_start+2984], 2984),
       IResult::Done(
         &b""[..],
         VideoData {
           frame_type: FrameType::Key,
           codec_id:   CodecId::SORENSON_H263,
-          video_data: &zelda[tag_start+1..tag_start+2984]
+          video_data: &zeldaHQ[tag_start+1..tag_start+2984]
         }
     ));
   }

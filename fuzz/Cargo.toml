@@ -1,0 +1,21 @@
+
+[package]
+name = "flavors-fuzz"
+version = "0.0.1"
+authors = ["Automatically generated"]
+publish = false
+
+[dependencies.flavors]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "header"
+path = "fuzzers/header.rs"
+
+[[bin]]
+name = "tag"
+path = "fuzzers/tag.rs"

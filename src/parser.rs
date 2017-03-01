@@ -57,18 +57,18 @@ pub struct TagHeader {
   pub stream_id: u32,
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum TagData {
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub enum TagData<'a> {
   //Audio(AudioData),
-  Audio,
-  Video,
+  Audio(AudioData<'a>),
+  Video(VideoData<'a>),
   Script,
 }
 
 #[derive(Debug,PartialEq,Eq)]
-pub struct Tag {
+pub struct Tag<'a> {
   pub header: TagHeader,
-  pub data:   TagData,
+  pub data:   TagData<'a>,
 }
 
 named!(pub tag_header<TagHeader>,
@@ -90,6 +90,39 @@ named!(pub tag_header<TagHeader>,
     })
   )
 );
+
+named!(pub complete_tag<Tag>,
+  do_parse!(
+    tag_type: switch!(be_u8,
+      8  => value!(TagType::Audio) |
+      9  => value!(TagType::Video) |
+      18 => value!(TagType::Script)
+    )                                >>
+    data_size:          be_u24       >>
+    timestamp:          be_u24       >>
+    timestamp_extended: be_u8        >>
+    stream_id:          be_u24       >>
+    data: apply!(tag_data, tag_type, data_size as usize) >>
+    (Tag {
+      header: TagHeader {
+        tag_type:  tag_type,
+        data_size: data_size,
+        timestamp: ((timestamp_extended as u32) << 24) + timestamp,
+        stream_id: stream_id,
+      },
+      data: data
+    })
+  )
+);
+
+pub fn tag_data(input: &[u8], tag_type: TagType, size: usize) -> IResult<&[u8], TagData> {
+  match tag_type {
+    TagType::Video  => map!(input, apply!(video_data, size), |v| TagData::Video(v)),
+    TagType::Audio  => map!(input, apply!(audio_data, size), |v| TagData::Audio(v)),
+    TagType::Script => value!(input, TagData::Script)
+  }
+}
+
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum SoundFormat {
@@ -176,7 +209,7 @@ pub fn aac_audio_packet(input: &[u8], size: usize) -> IResult<&[u8], AACAudioPac
   })
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Debug,PartialEq,Eq)]
 pub struct AudioData<'a> {
   pub sound_format: SoundFormat,
   pub sound_rate:   SoundRate,
@@ -374,7 +407,7 @@ pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPac
   })
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Debug,PartialEq,Eq)]
 pub struct VideoData<'a> {
   pub frame_type: FrameType,
   pub codec_id:   CodecId,
@@ -766,6 +799,40 @@ mod tests {
       }
       _ => unreachable!(),
     }
+  }
+
+  #[test]
+  fn complete_video_tags() {
+    let tag_start      = 13;
+    let tag_data_start = tag_start + 11;
+    assert_eq!(
+      complete_tag(&zelda[tag_start..tag_data_start+537]),
+      IResult::Done(
+        &b""[..],
+        Tag {
+          header: TagHeader { tag_type: TagType::Video, data_size: 537, timestamp: 0, stream_id: 0 },
+          data: TagData::Video(VideoData {
+            frame_type: FrameType::Key,
+            codec_id:   CodecId::H263,
+            video_data: &zelda[tag_data_start+1..tag_data_start+537]
+          })
+        }
+      )
+    );
+    assert_eq!(
+      complete_tag(&zeldaHQ[tag_start..tag_data_start+2984]),
+      IResult::Done(
+        &b""[..],
+        Tag {
+          header: TagHeader { tag_type: TagType::Video, data_size: 2984, timestamp: 0, stream_id: 0 },
+          data: TagData::Video(VideoData {
+            frame_type: FrameType::Key,
+            codec_id:   CodecId::H263,
+            video_data: &zeldaHQ[tag_data_start+1..tag_data_start+2984]
+          })
+        }
+      )
+    );
   }
 
 }

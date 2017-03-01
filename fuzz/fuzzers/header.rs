@@ -2,7 +2,7 @@
 extern crate libfuzzer_sys;
 extern crate flavors;
 
-use flavors::header;
+use flavors::parser::header;
 
 #[export_name="rust_fuzzer_test_input"]
 pub extern fn go(data: &[u8]) {

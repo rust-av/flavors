@@ -813,7 +813,7 @@ mod tests {
           header: TagHeader { tag_type: TagType::Video, data_size: 537, timestamp: 0, stream_id: 0 },
           data: TagData::Video(VideoData {
             frame_type: FrameType::Key,
-            codec_id:   CodecId::H263,
+            codec_id:   CodecId::SORENSON_H263,
             video_data: &zelda[tag_data_start+1..tag_data_start+537]
           })
         }
@@ -827,7 +827,7 @@ mod tests {
           header: TagHeader { tag_type: TagType::Video, data_size: 2984, timestamp: 0, stream_id: 0 },
           data: TagData::Video(VideoData {
             frame_type: FrameType::Key,
-            codec_id:   CodecId::H263,
+            codec_id:   CodecId::SORENSON_H263,
             video_data: &zeldaHQ[tag_data_start+1..tag_data_start+2984]
           })
         }

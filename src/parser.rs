@@ -195,13 +195,15 @@ pub fn aac_audio_packet(input: &[u8], size: usize) -> IResult<&[u8], AACAudioPac
     return IResult::Incomplete(Needed::Size(size));
   }
 
+  if size < 1 {
+    return IResult::Incomplete(Needed::Size(1));
+  }
+
   let (remaining, packet_type) = try_parse!(input, switch!(be_u8,
       0  => value!(AACPacketType::SequenceHeader) |
       1  => value!(AACPacketType::Raw)
     )
   );
-
-  assert_eq!(size - 1, remaining.len());
 
   IResult::Done(&input[size..], AACAudioPacket {
     packet_type: packet_type,
@@ -221,6 +223,10 @@ pub struct AudioData<'a> {
 pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
   if input.len() < size {
     return IResult::Incomplete(Needed::Size(size));
+  }
+
+  if size < 1 {
+    return IResult::Incomplete(Needed::Size(1));
   }
 
   let (remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
@@ -256,8 +262,6 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
       )
     )
   ));
-
-  assert_eq!(size - 1, remaining.len());
 
   IResult::Done(&input[size..], AudioData {
     sound_format: sformat,
@@ -314,8 +318,6 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
       )
     )
   ));
-
-  assert_eq!(input.len() - 1, remaining.len());
 
   IResult::Done(remaining, AudioDataHeader {
     sound_format: sformat,
@@ -389,6 +391,10 @@ pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPac
     return IResult::Incomplete(Needed::Size(size));
   }
 
+  if size < 4 {
+    return IResult::Incomplete(Needed::Size(4));
+  }
+
   let (remaining, (packet_type, composition_time)) = try_parse!(input, tuple!(
     switch!(be_u8,
       0  => value!(AVCPacketType::SequenceHeader) |
@@ -397,8 +403,6 @@ pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPac
     ),
     be_i24
   ));
-
-  assert_eq!(size - 4, remaining.len());
 
   IResult::Done(&input[size..], AVCVideoPacket {
     packet_type:      packet_type,
@@ -417,6 +421,10 @@ pub struct VideoData<'a> {
 pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
   if input.len() < size {
     return IResult::Incomplete(Needed::Size(size));
+  }
+
+  if size < 1 {
+    return IResult::Incomplete(Needed::Size(1));
   }
 
   let (remaining, (frame_type, codec_id)) = try_parse!(input, bits!(
@@ -441,8 +449,6 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
       )
     )
   ));
-
-  assert_eq!(size - 1, remaining.len());
 
   IResult::Done(&input[size..], VideoData {
     frame_type: frame_type,
@@ -484,8 +490,6 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
       )
     )
   ));
-
-  assert_eq!(input.len() - 1, remaining.len());
 
   IResult::Done(remaining, VideoDataHeader {
     frame_type: frame_type,

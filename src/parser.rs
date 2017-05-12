@@ -1,16 +1,5 @@
-use nom::{be_u8,be_u16,be_i16,be_u32,be_f64,IResult,Needed};
+use nom::{be_u8,be_u16,be_i16,be_u24,be_u32,be_f64,IResult,Needed};
 use std::str::from_utf8;
-
-/// Recognizes big endian unsigned 3 bytes integer
-#[inline]
-pub fn be_u24(i: &[u8]) -> IResult<&[u8], u32> {
-  if i.len() < 3 {
-    IResult::Incomplete(Needed::Size(3))
-  } else {
-    let res = ((i[0] as u32) << 16) + ((i[1] as u32) << 8) + i[2] as u32;
-    IResult::Done(&i[3..], res)
-  }
-}
 
 /// Recognizes big endian signed 3 bytes integer
 #[inline]

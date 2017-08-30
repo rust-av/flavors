@@ -38,7 +38,7 @@ pub enum TagType {
   Script,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Debug,PartialEq,Eq)]
 pub struct TagHeader {
   pub tag_type:  TagType,
   pub data_size: u32,
@@ -156,7 +156,7 @@ pub enum AACPacketType {
   Raw,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Debug,PartialEq,Eq)]
 pub struct AACAudioPacketHeader {
   pub packet_type: AACPacketType,
 }
@@ -347,7 +347,7 @@ pub enum AVCPacketType {
   EndOfSequence,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Debug,PartialEq,Eq)]
 pub struct AVCVideoPacketHeader {
   pub packet_type:      AVCPacketType,
   pub composition_time: i32,
@@ -446,7 +446,7 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
   })
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Debug,PartialEq,Eq)]
 pub struct VideoDataHeader {
   pub frame_type: FrameType,
   pub codec_id:   CodecId,
@@ -514,7 +514,7 @@ pub struct ScriptDataObject<'a> {
   pub data: ScriptDataValue<'a>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone,Debug, PartialEq)]
 pub struct ScriptDataDate {
   pub date_time: f64,
   pub local_date_time_offset: i16, // SI16

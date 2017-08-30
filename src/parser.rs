@@ -8,7 +8,7 @@ pub fn be_i24(i: &[u8]) -> IResult<&[u8], i32> {
   map!(i, be_u24, | x | if x & 0x80_00_00 != 0 { (x | 0xff_00_00_00) as i32 } else { x as i32 })
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Header {
   pub version: u8,
   pub audio:   bool,

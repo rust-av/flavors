@@ -1,4 +1,5 @@
-use nom::{be_u8,be_u16,be_i16,be_u24,be_i24,be_u32,be_f64,IResult,Err,Needed};
+use nom::{IResult,Err,Needed};
+use nom::number::streaming::{be_u8,be_u16,be_i16,be_u24,be_i24,be_u32,be_f64};
 use std::str::from_utf8;
 
 #[derive(Clone,Debug,PartialEq,Eq)]
@@ -73,6 +74,12 @@ named!(pub tag_header<TagHeader>,
   )
 );
 
+macro_rules! tag_data(
+  ($i:expr, $tag_type:expr, $size:expr) => (
+    tag_data($tag_type, $size)($i)
+  );
+);
+
 named!(pub complete_tag<Tag>,
   do_parse!(
     tag_type: switch!(be_u8,
@@ -84,7 +91,7 @@ named!(pub complete_tag<Tag>,
     timestamp:          be_u24       >>
     timestamp_extended: be_u8        >>
     stream_id:          be_u24       >>
-    data: apply!(tag_data, tag_type, data_size as usize) >>
+    data: tag_data!(tag_type, data_size as usize) >>
     (Tag {
       header: TagHeader {
         tag_type:  tag_type,
@@ -97,11 +104,13 @@ named!(pub complete_tag<Tag>,
   )
 );
 
-pub fn tag_data(input: &[u8], tag_type: TagType, size: usize) -> IResult<&[u8], TagData> {
-  match tag_type {
-    TagType::Video  => map!(input, apply!(video_data, size), |v| TagData::Video(v)),
-    TagType::Audio  => map!(input, apply!(audio_data, size), |v| TagData::Audio(v)),
-    TagType::Script => value!(input, TagData::Script)
+pub fn tag_data(tag_type: TagType, size: usize) -> impl Fn(&[u8]) -> IResult<&[u8], TagData> {
+  move |input: &[u8]| {
+      match tag_type {
+        TagType::Video  => map!(input, |i| video_data(i, size), |v| TagData::Video(v)),
+        TagType::Audio  => map!(input, |i| audio_data(i, size), |v| TagData::Audio(v)),
+        TagType::Script => value!(input, TagData::Script)
+      }
   }
 }
 
@@ -214,7 +223,7 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
 
   let (_remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
     tuple!(
-      switch!(take_bits!(u8, 4),
+      switch!(take_bits!(4u8),
         0  => value!(SoundFormat::PCM_NE)
       | 1  => value!(SoundFormat::ADPCM)
       | 2  => value!(SoundFormat::MP3)
@@ -229,17 +238,17 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
       | 14 => value!(SoundFormat::MP3_8KHZ)
       | 15 => value!(SoundFormat::DEVICE_SPECIFIC)
       ),
-      switch!(take_bits!(u8, 2),
+      switch!(take_bits!(2u8),
         0 => value!(SoundRate::_5_5KHZ)
       | 1 => value!(SoundRate::_11KHZ)
       | 2 => value!(SoundRate::_22KHZ)
       | 3 => value!(SoundRate::_44KHZ)
       ),
-      switch!(take_bits!(u8, 1),
+      switch!(take_bits!(1u8),
         0 => value!(SoundSize::Snd8bit)
       | 1 => value!(SoundSize::Snd16bit)
       ),
-      switch!(take_bits!(u8, 1),
+      switch!(take_bits!(1u8),
         0 => value!(SoundType::SndMono)
       | 1 => value!(SoundType::SndStereo)
       )
@@ -270,7 +279,7 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
 
   let (remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
     tuple!(
-      switch!(take_bits!(u8, 4),
+      switch!(take_bits!(4u8),
         0  => value!(SoundFormat::PCM_NE)
       | 1  => value!(SoundFormat::ADPCM)
       | 2  => value!(SoundFormat::MP3)
@@ -285,17 +294,17 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
       | 14 => value!(SoundFormat::MP3_8KHZ)
       | 15 => value!(SoundFormat::DEVICE_SPECIFIC)
       ),
-      switch!(take_bits!(u8, 2),
+      switch!(take_bits!(2u8),
         0 => value!(SoundRate::_5_5KHZ)
       | 1 => value!(SoundRate::_11KHZ)
       | 2 => value!(SoundRate::_22KHZ)
       | 3 => value!(SoundRate::_44KHZ)
       ),
-      switch!(take_bits!(u8, 1),
+      switch!(take_bits!(1u8),
         0 => value!(SoundSize::Snd8bit)
       | 1 => value!(SoundSize::Snd16bit)
       ),
-      switch!(take_bits!(u8, 1),
+      switch!(take_bits!(1u8),
         0 => value!(SoundType::SndMono)
       | 1 => value!(SoundType::SndStereo)
       )
@@ -413,14 +422,14 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
 
   let (_remaining, (frame_type, codec_id)) = try_parse!(input, bits!(
     tuple!(
-      switch!(take_bits!(u8, 4),
+      switch!(take_bits!(4u8),
         1  => value!(FrameType::Key)
       | 2  => value!(FrameType::Inter)
       | 3  => value!(FrameType::DisposableInter)
       | 4  => value!(FrameType::Generated)
       | 5  => value!(FrameType::Command)
       ),
-      switch!(take_bits!(u8, 4),
+      switch!(take_bits!(4u8),
         1 => value!(CodecId::JPEG)
       | 2 => value!(CodecId::SORENSON_H263)
       | 3 => value!(CodecId::SCREEN)
@@ -454,14 +463,14 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
 
   let (remaining, (frame_type, codec_id)) = try_parse!(input, bits!(
     tuple!(
-      switch!(take_bits!(u8, 4),
+      switch!(take_bits!(4u8),
         1  => value!(FrameType::Key)
       | 2  => value!(FrameType::Inter)
       | 3  => value!(FrameType::DisposableInter)
       | 4  => value!(FrameType::Generated)
       | 5  => value!(FrameType::Command)
       ),
-      switch!(take_bits!(u8, 4),
+      switch!(take_bits!(4u8),
         1 => value!(CodecId::JPEG)
       | 2 => value!(CodecId::SORENSON_H263)
       | 3 => value!(CodecId::SCREEN)
@@ -575,8 +584,8 @@ pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],&[u8]> {
   tag!(input, script_data_object_end_terminator)
 }
 
-named!(pub script_data_string<&str>, map_res!(length_bytes!(be_u16), from_utf8));
-named!(pub script_data_long_string<&str>, map_res!(length_bytes!(be_u32), from_utf8));
+named!(pub script_data_string<&str>, map_res!(length_data!(be_u16), from_utf8));
+named!(pub script_data_long_string<&str>, map_res!(length_data!(be_u32), from_utf8));
 named!(pub script_data_date<ScriptDataDate>,
   do_parse!(
     date_time: be_f64               >>
@@ -607,7 +616,8 @@ pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataVa
 #[cfg(test)]
 mod tests {
   use super::*;
-  use nom::{be_u32,HexDisplay};
+  use nom::HexDisplay;
+  use nom::number::streaming::be_u32;
 
   const zelda       : &'static [u8] = include_bytes!("../assets/zelda.flv");
   const zeldaHQ     : &'static [u8] = include_bytes!("../assets/zeldaHQ.flv");
@@ -662,7 +672,7 @@ mod tests {
   #[test]
   fn audio_tags() {
     let tag_start = 24+537+4;
-    println!("size of previous tag: {:?}", be_u32(&zelda[24+537..tag_start]));
+    println!("size of previous tag: {:?}", be_u32::<()>(&zelda[24+537..tag_start]));
     assert_eq!(
       tag_header(&zelda[tag_start..tag_start+11]),
       Ok((
@@ -671,7 +681,7 @@ mod tests {
     )));
 
     let tag_start2 = 24+2984+4;
-    println!("size of previous tag: {:?}", be_u32(&zeldaHQ[24+2984..tag_start2]));
+    println!("size of previous tag: {:?}", be_u32::<()>(&zeldaHQ[24+2984..tag_start2]));
     println!("data:\n{}", (&zeldaHQ[tag_start2..tag_start2+11]).to_hex(8));
     assert_eq!(
       tag_header(&zeldaHQ[tag_start2..tag_start2+11]),

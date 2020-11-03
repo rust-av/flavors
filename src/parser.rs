@@ -184,11 +184,11 @@ pub struct AACAudioPacket<'a> {
 
 pub fn aac_audio_packet(input: &[u8], size: usize) -> IResult<&[u8], AACAudioPacket> {
   if input.len() < size {
-    return Err(Err::Incomplete(Needed::Size(size)));
+    return Err(Err::Incomplete(Needed::new(size)));
   }
 
   if size < 1 {
-    return Err(Err::Incomplete(Needed::Size(1)));
+    return Err(Err::Incomplete(Needed::new(1)));
   }
 
   let (_remaining, packet_type) = try_parse!(input, switch!(be_u8,
@@ -214,11 +214,11 @@ pub struct AudioData<'a> {
 
 pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
   if input.len() < size {
-    return Err(Err::Incomplete(Needed::Size(size)));
+    return Err(Err::Incomplete(Needed::new(size)));
   }
 
   if size < 1 {
-    return Err(Err::Incomplete(Needed::Size(1)));
+    return Err(Err::Incomplete(Needed::new(1)));
   }
 
   let (_remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
@@ -274,7 +274,7 @@ pub struct AudioDataHeader {
 
 pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
   if input.len() < 1 {
-    return Err(Err::Incomplete(Needed::Size(1)));
+    return Err(Err::Incomplete(Needed::new(1)));
   }
 
   let (remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
@@ -381,11 +381,11 @@ pub struct AVCVideoPacket<'a> {
 
 pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPacket> {
   if input.len() < size {
-    return Err(Err::Incomplete(Needed::Size(size)));
+    return Err(Err::Incomplete(Needed::new(size)));
   }
 
   if size < 4 {
-    return Err(Err::Incomplete(Needed::Size(4)));
+    return Err(Err::Incomplete(Needed::new(4)));
   }
 
   let (_remaining, (packet_type, composition_time)) = try_parse!(input, tuple!(
@@ -413,11 +413,11 @@ pub struct VideoData<'a> {
 
 pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
   if input.len() < size {
-    return Err(Err::Incomplete(Needed::Size(size)));
+    return Err(Err::Incomplete(Needed::new(size)));
   }
 
   if size < 1 {
-    return Err(Err::Incomplete(Needed::Size(1)));
+    return Err(Err::Incomplete(Needed::new(1)));
   }
 
   let (_remaining, (frame_type, codec_id)) = try_parse!(input, bits!(
@@ -458,7 +458,7 @@ pub struct VideoDataHeader {
 
 pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
   if input.len() < 1 {
-    return Err(Err::Incomplete(Needed::Size(1)));
+    return Err(Err::Incomplete(Needed::new(1)));
   }
 
   let (remaining, (frame_type, codec_id)) = try_parse!(input, bits!(
@@ -672,7 +672,7 @@ mod tests {
   #[test]
   fn audio_tags() {
     let tag_start = 24+537+4;
-    println!("size of previous tag: {:?}", be_u32::<()>(&zelda[24+537..tag_start]));
+    println!("size of previous tag: {:?}", be_u32::<_, ()>(&zelda[24+537..tag_start]));
     assert_eq!(
       tag_header(&zelda[tag_start..tag_start+11]),
       Ok((
@@ -681,7 +681,7 @@ mod tests {
     )));
 
     let tag_start2 = 24+2984+4;
-    println!("size of previous tag: {:?}", be_u32::<()>(&zeldaHQ[24+2984..tag_start2]));
+    println!("size of previous tag: {:?}", be_u32::<_, ()>(&zeldaHQ[24+2984..tag_start2]));
     println!("data:\n{}", (&zeldaHQ[tag_start2..tag_start2+11]).to_hex(8));
     assert_eq!(
       tag_header(&zeldaHQ[tag_start2..tag_start2+11]),

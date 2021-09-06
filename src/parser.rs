@@ -1,5 +1,11 @@
+use nom::bytes::streaming::tag;
+use nom::combinator::{map, map_res};
+use nom::error::{Error, ErrorKind};
+use nom::multi::{length_data, many0, many_m_n};
+use nom::sequence::{pair, terminated, tuple};
 use nom::{IResult,Err,Needed};
 use nom::number::streaming::{be_u8,be_u16,be_i16,be_u24,be_i24,be_u32,be_f64};
+
 use std::str::from_utf8;
 
 #[derive(Clone,Debug,PartialEq,Eq)]
@@ -10,20 +16,17 @@ pub struct Header {
   pub offset:  u32,
 }
 
-named!(pub header<Header>,
-  do_parse!(
-             tag!("FLV") >>
-    version: be_u8       >>
-    flags:   be_u8       >>
-    offset:  be_u32      >>
-    (Header {
-        version: version,
-        audio:   flags & 4 == 4,
-        video:   flags & 1 == 1,
-        offset:  offset
-    })
-  )
-);
+pub fn header(input: &[u8]) -> IResult<&[u8], Header> {
+  let (i, _) = tag("FLV")(input)?;
+  let (i, (version, flags, offset)) = tuple((be_u8, be_u8, be_u32))(i)?;
+  let header = Header {
+    version,
+    audio: flags & 4 == 4,
+    video: flags & 1 == 1,
+    offset,
+  };
+  Ok((i, header))
+}
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum TagType {
@@ -54,66 +57,61 @@ pub struct Tag<'a> {
   pub data:   TagData<'a>,
 }
 
-named!(pub tag_header<TagHeader>,
-  do_parse!(
-    tag_type: switch!(be_u8,
-      8  => value!(TagType::Audio) |
-      9  => value!(TagType::Video) |
-      18 => value!(TagType::Script)
-    )                                >>
-    data_size:          be_u24       >>
-    timestamp:          be_u24       >>
-    timestamp_extended: be_u8        >>
-    stream_id:          be_u24       >>
-    (TagHeader {
-        tag_type:  tag_type,
-        data_size: data_size,
-        timestamp: ((timestamp_extended as u32) << 24) + timestamp,
-        stream_id: stream_id,
-    })
-  )
-);
+pub fn tag_header(input: &[u8]) -> IResult<&[u8], TagHeader> {
+  let (i, tag_type) = be_u8(input)?;
+  let tag_type = match tag_type {
+    8 => TagType::Audio,
+    9 => TagType::Video,
+    18 => TagType::Script,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let (i, data_size) = be_u24(i)?;
+  let (i, timestamp) = be_u24(i)?;
+  let (i, timestamp_extended) = be_u8(i)?;
+  let (i, stream_id) = be_u24(i)?;
+  let header = TagHeader {
+    tag_type,
+    data_size,
+    timestamp: (timestamp_extended as u32) << 24 + timestamp,
+    stream_id,
+  };
+  Ok((i, header))
+}
 
-macro_rules! tag_data(
-  ($i:expr, $tag_type:expr, $size:expr) => (
-    tag_data($tag_type, $size)($i)
-  );
-);
-
-named!(pub complete_tag<Tag>,
-  do_parse!(
-    tag_type: switch!(be_u8,
-      8  => value!(TagType::Audio) |
-      9  => value!(TagType::Video) |
-      18 => value!(TagType::Script)
-    )                                >>
-    data_size:          be_u24       >>
-    timestamp:          be_u24       >>
-    timestamp_extended: be_u8        >>
-    stream_id:          be_u24       >>
-    data: tag_data!(tag_type, data_size as usize) >>
-    (Tag {
-      header: TagHeader {
-        tag_type:  tag_type,
-        data_size: data_size,
-        timestamp: ((timestamp_extended as u32) << 24) + timestamp,
-        stream_id: stream_id,
-      },
-      data: data
-    })
-  )
-);
+pub fn complete_tag(input: &[u8]) -> IResult<&[u8], Tag> {
+  let (i, tag_type) = be_u8(input)?;
+  let tag_type = match tag_type {
+    8 => TagType::Audio,
+    9 => TagType::Video,
+    18 => TagType::Script,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let (i, data_size) = be_u24(i)?;
+  let (i, timestamp) = be_u24(i)?;
+  let (i, timestamp_extended) = be_u8(i)?;
+  let (i, stream_id) = be_u24(i)?;
+  let (i, data) = tag_data(tag_type, data_size as usize)(i)?;
+  let tag = Tag {
+    header: TagHeader {
+      tag_type,
+      data_size,
+      timestamp: (timestamp_extended as u32) << 24 + timestamp,
+      stream_id,
+    },
+    data,
+  };
+  Ok((i, tag))
+}
 
 pub fn tag_data(tag_type: TagType, size: usize) -> impl Fn(&[u8]) -> IResult<&[u8], TagData> {
   move |input: &[u8]| {
-      match tag_type {
-        TagType::Video  => map!(input, |i| video_data(i, size), |v| TagData::Video(v)),
-        TagType::Audio  => map!(input, |i| audio_data(i, size), |v| TagData::Audio(v)),
-        TagType::Script => value!(input, TagData::Script)
-      }
+    match tag_type {
+      TagType::Video  => map(|i| video_data(i, size), TagData::Video)(input),
+      TagType::Audio  => map(|i| audio_data(i, size), TagData::Audio)(input),
+      TagType::Script => Ok((input, TagData::Script)),
+    }
   }
 }
-
 
 #[allow(non_camel_case_types)]
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -164,17 +162,15 @@ pub struct AACAudioPacketHeader {
   pub packet_type: AACPacketType,
 }
 
-named!(pub aac_audio_packet_header<AACAudioPacketHeader>,
-  do_parse!(
-    packet_type: switch!(be_u8,
-      0  => value!(AACPacketType::SequenceHeader) |
-      1  => value!(AACPacketType::Raw)
-    )                                >>
-    (AACAudioPacketHeader {
-        packet_type: packet_type,
-    })
-  )
-);
+pub fn aac_audio_packet_header(input: &[u8]) -> IResult<&[u8], AACAudioPacketHeader> {
+  let (i, packet_type) = be_u8(input)?;
+  let packet_type = match packet_type {
+    0 => AACPacketType::SequenceHeader,
+    1 => AACPacketType::Raw,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  Ok((i, AACAudioPacketHeader { packet_type }))
+}
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct AACAudioPacket<'a> {
@@ -190,12 +186,12 @@ pub fn aac_audio_packet(input: &[u8], size: usize) -> IResult<&[u8], AACAudioPac
   if size < 1 {
     return Err(Err::Incomplete(Needed::new(1)));
   }
-
-  let (_remaining, packet_type) = try_parse!(input, switch!(be_u8,
-      0  => value!(AACPacketType::SequenceHeader) |
-      1  => value!(AACPacketType::Raw)
-    )
-  );
+  let (_remaining, packet_type) = be_u8(input)?;
+  let packet_type = match packet_type {
+    0 => AACPacketType::SequenceHeader,
+    1 => AACPacketType::Raw,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
 
   Ok((&input[size..], AACAudioPacket {
     packet_type: packet_type,
@@ -221,39 +217,44 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
     return Err(Err::Incomplete(Needed::new(1)));
   }
 
-  let (_remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
-    tuple!(
-      switch!(take_bits!(4u8),
-        0  => value!(SoundFormat::PCM_NE)
-      | 1  => value!(SoundFormat::ADPCM)
-      | 2  => value!(SoundFormat::MP3)
-      | 3  => value!(SoundFormat::PCM_LE)
-      | 4  => value!(SoundFormat::NELLYMOSER_16KHZ_MONO)
-      | 5  => value!(SoundFormat::NELLYMOSER_8KHZ_MONO)
-      | 6  => value!(SoundFormat::NELLYMOSER)
-      | 7  => value!(SoundFormat::PCM_ALAW)
-      | 8  => value!(SoundFormat::PCM_ULAW)
-      | 10 => value!(SoundFormat::AAC)
-      | 11 => value!(SoundFormat::SPEEX)
-      | 14 => value!(SoundFormat::MP3_8KHZ)
-      | 15 => value!(SoundFormat::DEVICE_SPECIFIC)
-      ),
-      switch!(take_bits!(2u8),
-        0 => value!(SoundRate::_5_5KHZ)
-      | 1 => value!(SoundRate::_11KHZ)
-      | 2 => value!(SoundRate::_22KHZ)
-      | 3 => value!(SoundRate::_44KHZ)
-      ),
-      switch!(take_bits!(1u8),
-        0 => value!(SoundSize::Snd8bit)
-      | 1 => value!(SoundSize::Snd16bit)
-      ),
-      switch!(take_bits!(1u8),
-        0 => value!(SoundType::SndMono)
-      | 1 => value!(SoundType::SndStereo)
-      )
-    )
-  ));
+  use nom::bits::bits;
+  use nom::bits::streaming::take;
+
+  let take_bits = tuple((take(4usize), take(2usize), take(1usize), take(1usize)));
+  let (_remaining, (sformat, srate, ssize, stype)) = bits::<_, _, Error<_>, _, _>(take_bits)(input)?;
+  let sformat = match sformat {
+    0  => SoundFormat::PCM_NE,
+    1  => SoundFormat::ADPCM,
+    2  => SoundFormat::MP3,
+    3  => SoundFormat::PCM_LE,
+    4  => SoundFormat::NELLYMOSER_16KHZ_MONO,
+    5  => SoundFormat::NELLYMOSER_8KHZ_MONO,
+    6  => SoundFormat::NELLYMOSER,
+    7  => SoundFormat::PCM_ALAW,
+    8  => SoundFormat::PCM_ULAW,
+    10 => SoundFormat::AAC,
+    11 => SoundFormat::SPEEX,
+    14 => SoundFormat::MP3_8KHZ,
+    15 => SoundFormat::DEVICE_SPECIFIC,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let srate = match srate {
+    0 => SoundRate::_5_5KHZ,
+    1 => SoundRate::_11KHZ,
+    2 => SoundRate::_22KHZ,
+    3 => SoundRate::_44KHZ,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let ssize = match ssize {
+    0 => SoundSize::Snd8bit,
+    1 => SoundSize::Snd16bit,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let stype = match stype {
+    0 => SoundType::SndMono,
+    1 => SoundType::SndStereo,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
 
   Ok((&input[size..], AudioData {
     sound_format: sformat,
@@ -277,39 +278,44 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
     return Err(Err::Incomplete(Needed::new(1)));
   }
 
-  let (remaining, (sformat, srate, ssize, stype)) = try_parse!(input, bits!(
-    tuple!(
-      switch!(take_bits!(4u8),
-        0  => value!(SoundFormat::PCM_NE)
-      | 1  => value!(SoundFormat::ADPCM)
-      | 2  => value!(SoundFormat::MP3)
-      | 3  => value!(SoundFormat::PCM_LE)
-      | 4  => value!(SoundFormat::NELLYMOSER_16KHZ_MONO)
-      | 5  => value!(SoundFormat::NELLYMOSER_8KHZ_MONO)
-      | 6  => value!(SoundFormat::NELLYMOSER)
-      | 7  => value!(SoundFormat::PCM_ALAW)
-      | 8  => value!(SoundFormat::PCM_ULAW)
-      | 10 => value!(SoundFormat::AAC)
-      | 11 => value!(SoundFormat::SPEEX)
-      | 14 => value!(SoundFormat::MP3_8KHZ)
-      | 15 => value!(SoundFormat::DEVICE_SPECIFIC)
-      ),
-      switch!(take_bits!(2u8),
-        0 => value!(SoundRate::_5_5KHZ)
-      | 1 => value!(SoundRate::_11KHZ)
-      | 2 => value!(SoundRate::_22KHZ)
-      | 3 => value!(SoundRate::_44KHZ)
-      ),
-      switch!(take_bits!(1u8),
-        0 => value!(SoundSize::Snd8bit)
-      | 1 => value!(SoundSize::Snd16bit)
-      ),
-      switch!(take_bits!(1u8),
-        0 => value!(SoundType::SndMono)
-      | 1 => value!(SoundType::SndStereo)
-      )
-    )
-  ));
+  use nom::bits::bits;
+  use nom::bits::streaming::take;
+
+  let take_bits = tuple((take(4usize), take(2usize), take(1usize), take(1usize)));
+  let (remaining, (sformat, srate, ssize, stype)) = bits::<_, _, Error<_>, _, _>(take_bits)(input)?;
+  let sformat = match sformat {
+    0  => SoundFormat::PCM_NE,
+    1  => SoundFormat::ADPCM,
+    2  => SoundFormat::MP3,
+    3  => SoundFormat::PCM_LE,
+    4  => SoundFormat::NELLYMOSER_16KHZ_MONO,
+    5  => SoundFormat::NELLYMOSER_8KHZ_MONO,
+    6  => SoundFormat::NELLYMOSER,
+    7  => SoundFormat::PCM_ALAW,
+    8  => SoundFormat::PCM_ULAW,
+    10 => SoundFormat::AAC,
+    11 => SoundFormat::SPEEX,
+    14 => SoundFormat::MP3_8KHZ,
+    15 => SoundFormat::DEVICE_SPECIFIC,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let srate = match srate {
+    0 => SoundRate::_5_5KHZ,
+    1 => SoundRate::_11KHZ,
+    2 => SoundRate::_22KHZ,
+    3 => SoundRate::_44KHZ,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let ssize = match ssize {
+    0 => SoundSize::Snd8bit,
+    1 => SoundSize::Snd16bit,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let stype = match stype {
+    0 => SoundType::SndMono,
+    1 => SoundType::SndStereo,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
 
   Ok((remaining, AudioDataHeader {
     sound_format: sformat,
@@ -357,20 +363,21 @@ pub struct AVCVideoPacketHeader {
   pub composition_time: i32,
 }
 
-named!(pub avc_video_packet_header<AVCVideoPacketHeader>,
-  do_parse!(
-    packet_type: switch!(be_u8,
-      0  => value!(AVCPacketType::SequenceHeader) |
-      1  => value!(AVCPacketType::NALU) |
-      2  => value!(AVCPacketType::EndOfSequence)
-    )                                >>
-    composition_time:   be_i24       >>
-    (AVCVideoPacketHeader {
-        packet_type:      packet_type,
-        composition_time: composition_time,
-    })
-  )
-);
+pub fn avc_video_packet_header(input: &[u8]) -> IResult<&[u8], AVCVideoPacketHeader> {
+  let (i, packet_type) = be_u8(input)?;
+  let packet_type = match packet_type {
+    0 => AVCPacketType::SequenceHeader,
+    1 => AVCPacketType::NALU,
+    2 => AVCPacketType::EndOfSequence,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let (i, composition_time) = be_i24(i)?;
+  let header = AVCVideoPacketHeader {
+    packet_type,
+    composition_time,
+  };
+  Ok((i, header))
+}
 
 #[derive(Debug,PartialEq,Eq)]
 pub struct AVCVideoPacket<'a> {
@@ -388,14 +395,14 @@ pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPac
     return Err(Err::Incomplete(Needed::new(4)));
   }
 
-  let (_remaining, (packet_type, composition_time)) = try_parse!(input, tuple!(
-    switch!(be_u8,
-      0  => value!(AVCPacketType::SequenceHeader) |
-      1  => value!(AVCPacketType::NALU) |
-      2  => value!(AVCPacketType::EndOfSequence)
-    ),
-    be_i24
-  ));
+  let (i, packet_type) = be_u8(input)?;
+  let packet_type = match packet_type {
+    0 => AVCPacketType::SequenceHeader,
+    1 => AVCPacketType::NALU,
+    2 => AVCPacketType::EndOfSequence,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let (_remaining, composition_time) = be_i24(i)?;
 
   Ok((&input[size..], AVCVideoPacket {
     packet_type:      packet_type,
@@ -420,28 +427,31 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
     return Err(Err::Incomplete(Needed::new(1)));
   }
 
-  let (_remaining, (frame_type, codec_id)) = try_parse!(input, bits!(
-    tuple!(
-      switch!(take_bits!(4u8),
-        1  => value!(FrameType::Key)
-      | 2  => value!(FrameType::Inter)
-      | 3  => value!(FrameType::DisposableInter)
-      | 4  => value!(FrameType::Generated)
-      | 5  => value!(FrameType::Command)
-      ),
-      switch!(take_bits!(4u8),
-        1 => value!(CodecId::JPEG)
-      | 2 => value!(CodecId::SORENSON_H263)
-      | 3 => value!(CodecId::SCREEN)
-      | 4 => value!(CodecId::VP6)
-      | 5 => value!(CodecId::VP6A)
-      | 6 => value!(CodecId::SCREEN2)
-      | 7 => value!(CodecId::H264)
-      | 8 => value!(CodecId::H263)
-      | 9 => value!(CodecId::MPEG4Part2)
-      )
-    )
-  ));
+  use nom::bits::bits;
+  use nom::bits::streaming::take;
+
+  let take_bits = pair(take(4usize), take(4usize));
+  let (_remaining, (frame_type, codec_id)) = bits::<_, _, Error<_>, _, _>(take_bits)(input)?;
+  let frame_type = match frame_type {
+    1 => FrameType::Key,
+    2 => FrameType::Inter,
+    3 => FrameType::DisposableInter,
+    4 => FrameType::Generated,
+    5 => FrameType::Command,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let codec_id = match codec_id {
+    1 => CodecId::JPEG,
+    2 => CodecId::SORENSON_H263,
+    3 => CodecId::SCREEN,
+    4 => CodecId::VP6,
+    5 => CodecId::VP6A,
+    6 => CodecId::SCREEN2,
+    7 => CodecId::H264,
+    8 => CodecId::H263,
+    9 => CodecId::MPEG4Part2,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
 
   Ok((&input[size..], VideoData {
     frame_type: frame_type,
@@ -461,28 +471,31 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
     return Err(Err::Incomplete(Needed::new(1)));
   }
 
-  let (remaining, (frame_type, codec_id)) = try_parse!(input, bits!(
-    tuple!(
-      switch!(take_bits!(4u8),
-        1  => value!(FrameType::Key)
-      | 2  => value!(FrameType::Inter)
-      | 3  => value!(FrameType::DisposableInter)
-      | 4  => value!(FrameType::Generated)
-      | 5  => value!(FrameType::Command)
-      ),
-      switch!(take_bits!(4u8),
-        1 => value!(CodecId::JPEG)
-      | 2 => value!(CodecId::SORENSON_H263)
-      | 3 => value!(CodecId::SCREEN)
-      | 4 => value!(CodecId::VP6)
-      | 5 => value!(CodecId::VP6A)
-      | 6 => value!(CodecId::SCREEN2)
-      | 7 => value!(CodecId::H264)
-      | 8 => value!(CodecId::H263)
-      | 9 => value!(CodecId::MPEG4Part2)
-      )
-    )
-  ));
+  use nom::bits::bits;
+  use nom::bits::streaming::take;
+
+  let take_bits = pair(take(4usize), take(4usize));
+  let (remaining, (frame_type, codec_id)) = bits::<_, _, Error<_>, _, _>(take_bits)(input)?;
+  let frame_type = match frame_type {
+    1 => FrameType::Key,
+    2 => FrameType::Inter,
+    3 => FrameType::DisposableInter,
+    4 => FrameType::Generated,
+    5 => FrameType::Command,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
+  let codec_id = match codec_id {
+    1 => CodecId::JPEG,
+    2 => CodecId::SORENSON_H263,
+    3 => CodecId::SCREEN,
+    4 => CodecId::VP6,
+    5 => CodecId::VP6A,
+    6 => CodecId::SCREEN2,
+    7 => CodecId::H264,
+    8 => CodecId::H263,
+    9 => CodecId::MPEG4Part2,
+    _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  };
 
   Ok((remaining, VideoDataHeader {
     frame_type: frame_type,
@@ -526,88 +539,73 @@ pub struct ScriptDataDate {
 
 #[allow(non_upper_case_globals)]
 static script_data_name_tag: &'static [u8] = &[2];
-named!(pub script_data<ScriptData>,
-  do_parse!(
-    // Must start with a string, i.e. 2
-    tag!(script_data_name_tag)   >>
-    name: script_data_string     >>
-    arguments: script_data_value >>
-    (ScriptData {
-        name: name,
-        arguments: arguments,
-    })
-    )
-);
 
-named!(pub script_data_value<ScriptDataValue>,
-  switch!(be_u8,
-      0  => map!(be_f64, |n| ScriptDataValue::Number(n))
-    | 1  => map!(be_u8, |n| ScriptDataValue::Boolean(n != 0))
-    | 2  => map!(script_data_string, |n| ScriptDataValue::String(n))
-    | 3  => map!(script_data_objects, |n| ScriptDataValue::Object(n))
-    | 4  => map!(script_data_string, |n| ScriptDataValue::MovieClip(n))
-    | 5  => value!(ScriptDataValue::Null) // to remove
-    | 6  => value!(ScriptDataValue::Undefined) // to remove
-    | 7  => map!(be_u16, |n| ScriptDataValue::Reference(n))
-    | 8  => map!(script_data_ECMA_array, |n| ScriptDataValue::ECMAArray(n))
-    | 10 => map!(script_data_strict_array, |n| ScriptDataValue::StrictArray(n))
-    | 11 => map!(script_data_date, |n| ScriptDataValue::Date(n))
-    | 12 => map!(script_data_long_string, |n| ScriptDataValue::LongString(n))
-  )
-);
+pub fn script_data(input: &[u8]) -> IResult<&[u8], ScriptData> {
+  // Must start with a string, i.e. 2
+  let (i, _) = tag(script_data_name_tag)(input)?;
+  let (i, (name, arguments)) = pair(script_data_string, script_data_value)(i)?;
+  Ok((i, ScriptData { name, arguments }))
+}
 
-named!(pub script_data_objects<Vec<ScriptDataObject> >,
-  terminated!(many0!(do_parse!(
-    name: script_data_string >>
-    value: script_data_value >>
-    (ScriptDataObject {
-        name: name,
-        data: value,
-    })
-    )), script_data_object_end)
-);
+pub fn script_data_value(input: &[u8]) -> IResult<&[u8], ScriptDataValue> {
+  match be_u8(input)? {
+    (i, 0) => map(be_f64, ScriptDataValue::Number)(i),
+    (i, 1) => map(be_u8, |n| ScriptDataValue::Boolean(n != 0))(i),
+    (i, 2) => map(script_data_string, ScriptDataValue::String)(i),
+    (i, 3) => map(script_data_objects, ScriptDataValue::Object)(i),
+    (i, 4) => map(script_data_string, ScriptDataValue::MovieClip)(i),
+    (i, 5) => Ok((i, ScriptDataValue::Null)), // to remove
+    (i, 6) => Ok((i, ScriptDataValue::Undefined)), // to remove
+    (i, 7) => map(be_u16, ScriptDataValue::Reference)(i),
+    (i, 8) => map(script_data_ECMA_array, ScriptDataValue::ECMAArray)(i),
+    (i, 10) => map(script_data_strict_array, ScriptDataValue::StrictArray)(i),
+    (i, 11) => map(script_data_date, ScriptDataValue::Date)(i),
+    (i, 12) => map(script_data_long_string, ScriptDataValue::LongString)(i),
+    _ => Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+  }
+}
 
-named!(pub script_data_object<ScriptDataObject>,
-  do_parse!(
-    name: script_data_string >>
-    data: script_data_value  >>
-    (ScriptDataObject {
-        name: name,
-        data: data,
-    })
-  )
-);
+pub fn script_data_objects(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {
+  terminated(many0(script_data_object), script_data_object_end)(input)
+}
+
+pub fn script_data_object(input: &[u8]) -> IResult<&[u8], ScriptDataObject> {
+  let (i, (name, data)) = pair(script_data_string, script_data_value)(input)?;
+  Ok((i, ScriptDataObject { name, data }))
+}
 
 #[allow(non_upper_case_globals)]
 static script_data_object_end_terminator: &'static [u8] = &[0, 0, 9];
+
 pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],&[u8]> {
-  tag!(input, script_data_object_end_terminator)
+  tag(script_data_object_end_terminator)(input)
 }
 
-named!(pub script_data_string<&str>, map_res!(length_data!(be_u16), from_utf8));
-named!(pub script_data_long_string<&str>, map_res!(length_data!(be_u32), from_utf8));
-named!(pub script_data_date<ScriptDataDate>,
-  do_parse!(
-    date_time: be_f64               >>
-    local_date_time_offset: be_i16  >>
-    (ScriptDataDate {
-        date_time: date_time,
-        local_date_time_offset: local_date_time_offset,
-    })
-  )
-);
+pub fn script_data_string(input: &[u8]) -> IResult<&[u8], &str> {
+  map_res(length_data(be_u16), from_utf8)(input)
+}
 
-named!(pub script_data_ECMA_array<Vec<ScriptDataObject> >,
-  do_parse!(
-    be_u32                 >>
-    v: script_data_objects >>
-    (v)
-  )
-);
+pub fn script_data_long_string(input: &[u8]) -> IResult<&[u8], &str> {
+  map_res(length_data(be_u32), from_utf8)(input)
+}
+
+pub fn script_data_date(input: &[u8]) -> IResult<&[u8], ScriptDataDate> {
+  let (i, (date_time, local_date_time_offset)) = pair(be_f64, be_i16)(input)?;
+  let date = ScriptDataDate {
+    date_time,
+    local_date_time_offset,
+  };
+  Ok((i, date))
+}
+
+pub fn script_data_ECMA_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {
+  let (i, _) = be_u32(input)?;
+  script_data_objects(i)
+}
 
 pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataValue>> {
   match be_u32(input) {
-    Ok((i, o)) => many_m_n!(i, 1, o as usize, script_data_value),
+    Ok((i, o)) => many_m_n(1, o as usize, script_data_value)(i),
     Err(err) => Err(err),
   }
 }

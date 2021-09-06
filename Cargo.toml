@@ -5,7 +5,7 @@ authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
 license = "MIT"
 
 [dependencies]
-nom = "6.0"
+nom = "7.0"
 
 [features]
 nightly = []

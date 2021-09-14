@@ -1,19 +1,19 @@
+use std::str::from_utf8;
+
 use nom::bytes::streaming::tag;
 use nom::combinator::{map, map_res};
 use nom::error::{Error, ErrorKind};
 use nom::multi::{length_data, many0, many_m_n};
+use nom::number::streaming::{be_f64, be_i16, be_i24, be_u16, be_u24, be_u32, be_u8};
 use nom::sequence::{pair, terminated, tuple};
-use nom::{IResult,Err,Needed};
-use nom::number::streaming::{be_u8,be_u16,be_i16,be_u24,be_i24,be_u32,be_f64};
+use nom::{Err, IResult, Needed};
 
-use std::str::from_utf8;
-
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Header {
   pub version: u8,
-  pub audio:   bool,
-  pub video:   bool,
-  pub offset:  u32,
+  pub audio: bool,
+  pub video: bool,
+  pub offset: u32,
 }
 
 pub fn header(input: &[u8]) -> IResult<&[u8], Header> {
@@ -28,22 +28,22 @@ pub fn header(input: &[u8]) -> IResult<&[u8], Header> {
   Ok((i, header))
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TagType {
   Audio,
   Video,
   Script,
 }
 
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TagHeader {
-  pub tag_type:  TagType,
+  pub tag_type: TagType,
   pub data_size: u32,
   pub timestamp: u32,
   pub stream_id: u32,
 }
 
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TagData<'a> {
   //Audio(AudioData),
   Audio(AudioData<'a>),
@@ -51,10 +51,10 @@ pub enum TagData<'a> {
   Script,
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Tag<'a> {
   pub header: TagHeader,
-  pub data:   TagData<'a>,
+  pub data: TagData<'a>,
 }
 
 pub fn tag_header(input: &[u8]) -> IResult<&[u8], TagHeader> {
@@ -104,17 +104,15 @@ pub fn complete_tag(input: &[u8]) -> IResult<&[u8], Tag> {
 }
 
 pub fn tag_data(tag_type: TagType, size: usize) -> impl Fn(&[u8]) -> IResult<&[u8], TagData> {
-  move |input: &[u8]| {
-    match tag_type {
-      TagType::Video  => map(|i| video_data(i, size), TagData::Video)(input),
-      TagType::Audio  => map(|i| audio_data(i, size), TagData::Audio)(input),
-      TagType::Script => Ok((input, TagData::Script)),
-    }
+  move |input: &[u8]| match tag_type {
+    TagType::Video => map(|i| video_data(i, size), TagData::Video)(input),
+    TagType::Audio => map(|i| audio_data(i, size), TagData::Audio)(input),
+    TagType::Script => Ok((input, TagData::Script)),
   }
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundFormat {
   PCM_NE, // native endianness...
   ADPCM,
@@ -131,7 +129,7 @@ pub enum SoundFormat {
   DEVICE_SPECIFIC,
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundRate {
   _5_5KHZ,
   _11KHZ,
@@ -139,25 +137,25 @@ pub enum SoundRate {
   _44KHZ,
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundSize {
   Snd8bit,
   Snd16bit,
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundType {
   SndMono,
   SndStereo,
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AACPacketType {
   SequenceHeader,
   Raw,
 }
 
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AACAudioPacketHeader {
   pub packet_type: AACPacketType,
 }
@@ -172,10 +170,10 @@ pub fn aac_audio_packet_header(input: &[u8]) -> IResult<&[u8], AACAudioPacketHea
   Ok((i, AACAudioPacketHeader { packet_type }))
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct AACAudioPacket<'a> {
   pub packet_type: AACPacketType,
-  pub aac_data:    &'a [u8]
+  pub aac_data: &'a [u8],
 }
 
 pub fn aac_audio_packet(input: &[u8], size: usize) -> IResult<&[u8], AACAudioPacket> {
@@ -193,19 +191,22 @@ pub fn aac_audio_packet(input: &[u8], size: usize) -> IResult<&[u8], AACAudioPac
     _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
   };
 
-  Ok((&input[size..], AACAudioPacket {
-    packet_type: packet_type,
-    aac_data:    &input[1..size]
-  }))
+  Ok((
+    &input[size..],
+    AACAudioPacket {
+      packet_type: packet_type,
+      aac_data: &input[1..size],
+    },
+  ))
 }
 
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AudioData<'a> {
   pub sound_format: SoundFormat,
-  pub sound_rate:   SoundRate,
-  pub sound_size:   SoundSize,
-  pub sound_type:   SoundType,
-  pub sound_data:   &'a [u8]
+  pub sound_rate: SoundRate,
+  pub sound_size: SoundSize,
+  pub sound_type: SoundType,
+  pub sound_data: &'a [u8],
 }
 
 pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
@@ -221,17 +222,18 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
   use nom::bits::streaming::take;
 
   let take_bits = tuple((take(4usize), take(2usize), take(1usize), take(1usize)));
-  let (_remaining, (sformat, srate, ssize, stype)) = bits::<_, _, Error<_>, _, _>(take_bits)(input)?;
+  let (_remaining, (sformat, srate, ssize, stype)) =
+    bits::<_, _, Error<_>, _, _>(take_bits)(input)?;
   let sformat = match sformat {
-    0  => SoundFormat::PCM_NE,
-    1  => SoundFormat::ADPCM,
-    2  => SoundFormat::MP3,
-    3  => SoundFormat::PCM_LE,
-    4  => SoundFormat::NELLYMOSER_16KHZ_MONO,
-    5  => SoundFormat::NELLYMOSER_8KHZ_MONO,
-    6  => SoundFormat::NELLYMOSER,
-    7  => SoundFormat::PCM_ALAW,
-    8  => SoundFormat::PCM_ULAW,
+    0 => SoundFormat::PCM_NE,
+    1 => SoundFormat::ADPCM,
+    2 => SoundFormat::MP3,
+    3 => SoundFormat::PCM_LE,
+    4 => SoundFormat::NELLYMOSER_16KHZ_MONO,
+    5 => SoundFormat::NELLYMOSER_8KHZ_MONO,
+    6 => SoundFormat::NELLYMOSER,
+    7 => SoundFormat::PCM_ALAW,
+    8 => SoundFormat::PCM_ULAW,
     10 => SoundFormat::AAC,
     11 => SoundFormat::SPEEX,
     14 => SoundFormat::MP3_8KHZ,
@@ -256,21 +258,24 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
     _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
   };
 
-  Ok((&input[size..], AudioData {
-    sound_format: sformat,
-    sound_rate:   srate,
-    sound_size:   ssize,
-    sound_type:   stype,
-    sound_data:   &input[1..size]
-  }))
+  Ok((
+    &input[size..],
+    AudioData {
+      sound_format: sformat,
+      sound_rate: srate,
+      sound_size: ssize,
+      sound_type: stype,
+      sound_data: &input[1..size],
+    },
+  ))
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct AudioDataHeader {
   pub sound_format: SoundFormat,
-  pub sound_rate:   SoundRate,
-  pub sound_size:   SoundSize,
-  pub sound_type:   SoundType,
+  pub sound_rate: SoundRate,
+  pub sound_size: SoundSize,
+  pub sound_type: SoundType,
 }
 
 pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
@@ -284,15 +289,15 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
   let take_bits = tuple((take(4usize), take(2usize), take(1usize), take(1usize)));
   let (remaining, (sformat, srate, ssize, stype)) = bits::<_, _, Error<_>, _, _>(take_bits)(input)?;
   let sformat = match sformat {
-    0  => SoundFormat::PCM_NE,
-    1  => SoundFormat::ADPCM,
-    2  => SoundFormat::MP3,
-    3  => SoundFormat::PCM_LE,
-    4  => SoundFormat::NELLYMOSER_16KHZ_MONO,
-    5  => SoundFormat::NELLYMOSER_8KHZ_MONO,
-    6  => SoundFormat::NELLYMOSER,
-    7  => SoundFormat::PCM_ALAW,
-    8  => SoundFormat::PCM_ULAW,
+    0 => SoundFormat::PCM_NE,
+    1 => SoundFormat::ADPCM,
+    2 => SoundFormat::MP3,
+    3 => SoundFormat::PCM_LE,
+    4 => SoundFormat::NELLYMOSER_16KHZ_MONO,
+    5 => SoundFormat::NELLYMOSER_8KHZ_MONO,
+    6 => SoundFormat::NELLYMOSER,
+    7 => SoundFormat::PCM_ALAW,
+    8 => SoundFormat::PCM_ULAW,
     10 => SoundFormat::AAC,
     11 => SoundFormat::SPEEX,
     14 => SoundFormat::MP3_8KHZ,
@@ -317,16 +322,18 @@ pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
     _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
   };
 
-  Ok((remaining, AudioDataHeader {
-    sound_format: sformat,
-    sound_rate:   srate,
-    sound_size:   ssize,
-    sound_type:   stype,
-  }))
+  Ok((
+    remaining,
+    AudioDataHeader {
+      sound_format: sformat,
+      sound_rate: srate,
+      sound_size: ssize,
+      sound_type: stype,
+    },
+  ))
 }
 
-
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FrameType {
   Key,
   Inter,
@@ -336,7 +343,7 @@ pub enum FrameType {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CodecId {
   JPEG,
   SORENSON_H263,
@@ -350,16 +357,16 @@ pub enum CodecId {
   MPEG4Part2, // MPEG-4 Part 2
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AVCPacketType {
   SequenceHeader,
   NALU,
   EndOfSequence,
 }
 
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AVCVideoPacketHeader {
-  pub packet_type:      AVCPacketType,
+  pub packet_type: AVCPacketType,
   pub composition_time: i32,
 }
 
@@ -379,11 +386,11 @@ pub fn avc_video_packet_header(input: &[u8]) -> IResult<&[u8], AVCVideoPacketHea
   Ok((i, header))
 }
 
-#[derive(Debug,PartialEq,Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct AVCVideoPacket<'a> {
-  pub packet_type:      AVCPacketType,
+  pub packet_type: AVCPacketType,
   pub composition_time: i32,
-  pub avc_data:         &'a [u8]
+  pub avc_data: &'a [u8],
 }
 
 pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPacket> {
@@ -404,18 +411,21 @@ pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPac
   };
   let (_remaining, composition_time) = be_i24(i)?;
 
-  Ok((&input[size..], AVCVideoPacket {
-    packet_type:      packet_type,
-    composition_time: composition_time,
-    avc_data:         &input[4..size]
-  }))
+  Ok((
+    &input[size..],
+    AVCVideoPacket {
+      packet_type: packet_type,
+      composition_time: composition_time,
+      avc_data: &input[4..size],
+    },
+  ))
 }
 
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VideoData<'a> {
   pub frame_type: FrameType,
-  pub codec_id:   CodecId,
-  pub video_data: &'a [u8]
+  pub codec_id: CodecId,
+  pub video_data: &'a [u8],
 }
 
 pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
@@ -453,17 +463,20 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
     _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
   };
 
-  Ok((&input[size..], VideoData {
-    frame_type: frame_type,
-    codec_id:   codec_id,
-    video_data: &input[1..size]
-  }))
+  Ok((
+    &input[size..],
+    VideoData {
+      frame_type: frame_type,
+      codec_id: codec_id,
+      video_data: &input[1..size],
+    },
+  ))
 }
 
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VideoDataHeader {
   pub frame_type: FrameType,
-  pub codec_id:   CodecId,
+  pub codec_id: CodecId,
 }
 
 pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
@@ -497,10 +510,13 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
     _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
   };
 
-  Ok((remaining, VideoDataHeader {
-    frame_type: frame_type,
-    codec_id:   codec_id,
-  }))
+  Ok((
+    remaining,
+    VideoDataHeader {
+      frame_type: frame_type,
+      codec_id: codec_id,
+    },
+  ))
 }
 
 #[derive(Debug, PartialEq)]
@@ -531,7 +547,7 @@ pub struct ScriptDataObject<'a> {
   pub data: ScriptDataValue<'a>,
 }
 
-#[derive(Clone,Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ScriptDataDate {
   pub date_time: f64,
   pub local_date_time_offset: i16, // SI16
@@ -577,7 +593,7 @@ pub fn script_data_object(input: &[u8]) -> IResult<&[u8], ScriptDataObject> {
 #[allow(non_upper_case_globals)]
 static script_data_object_end_terminator: &'static [u8] = &[0, 0, 9];
 
-pub fn script_data_object_end(input:&[u8]) -> IResult<&[u8],&[u8]> {
+pub fn script_data_object_end(input: &[u8]) -> IResult<&[u8], &[u8]> {
   tag(script_data_object_end_terminator)(input)
 }
 
@@ -614,12 +630,12 @@ pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataVa
 #[cfg(test)]
 mod tests {
   use super::*;
-  use nom::HexDisplay;
   use nom::number::streaming::be_u32;
+  use nom::HexDisplay;
 
-  const zelda       : &'static [u8] = include_bytes!("../assets/zelda.flv");
-  const zeldaHQ     : &'static [u8] = include_bytes!("../assets/zeldaHQ.flv");
-  const commercials : &'static [u8] = include_bytes!("../assets/asian-commercials-are-weird.flv");
+  const zelda: &'static [u8] = include_bytes!("../assets/zelda.flv");
+  const zeldaHQ: &'static [u8] = include_bytes!("../assets/zeldaHQ.flv");
+  const commercials: &'static [u8] = include_bytes!("../assets/asian-commercials-are-weird.flv");
 
   #[test]
   fn headers() {
@@ -627,20 +643,38 @@ mod tests {
       header(&zelda[..9]),
       Ok((
         &b""[..],
-        Header { version: 1, audio: true, video: true, offset: 9 }
-    )));
+        Header {
+          version: 1,
+          audio: true,
+          video: true,
+          offset: 9
+        }
+      ))
+    );
     assert_eq!(
       header(&zeldaHQ[..9]),
       Ok((
         &b""[..],
-        Header { version: 1, audio: true, video: true, offset: 9 }
-    )));
+        Header {
+          version: 1,
+          audio: true,
+          video: true,
+          offset: 9
+        }
+      ))
+    );
     assert_eq!(
       header(&commercials[..9]),
       Ok((
         &b""[..],
-        Header { version: 1, audio: true, video: true, offset: 9 }
-    )));
+        Header {
+          version: 1,
+          audio: true,
+          video: true,
+          offset: 9
+        }
+      ))
+    );
   }
 
   #[test]
@@ -651,96 +685,144 @@ mod tests {
       tag_header(&zelda[13..24]),
       Ok((
         &b""[..],
-        TagHeader { tag_type: TagType::Video, data_size: 537, timestamp: 0, stream_id: 0 }
-    )));
+        TagHeader {
+          tag_type: TagType::Video,
+          data_size: 537,
+          timestamp: 0,
+          stream_id: 0
+        }
+      ))
+    );
     assert_eq!(
       tag_header(&zeldaHQ[13..24]),
       Ok((
         &b""[..],
-        TagHeader { tag_type: TagType::Video, data_size: 2984, timestamp: 0, stream_id: 0 }
-    )));
+        TagHeader {
+          tag_type: TagType::Video,
+          data_size: 2984,
+          timestamp: 0,
+          stream_id: 0
+        }
+      ))
+    );
     assert_eq!(
       tag_header(&commercials[13..24]),
       Ok((
         &b""[..],
-        TagHeader { tag_type: TagType::Script, data_size: 273, timestamp: 0, stream_id: 0 }
-    )));
+        TagHeader {
+          tag_type: TagType::Script,
+          data_size: 273,
+          timestamp: 0,
+          stream_id: 0
+        }
+      ))
+    );
   }
 
   #[test]
   fn audio_tags() {
-    let tag_start = 24+537+4;
-    println!("size of previous tag: {:?}", be_u32::<_, ()>(&zelda[24+537..tag_start]));
+    let tag_start = 24 + 537 + 4;
+    println!(
+      "size of previous tag: {:?}",
+      be_u32::<_, ()>(&zelda[24 + 537..tag_start])
+    );
     assert_eq!(
-      tag_header(&zelda[tag_start..tag_start+11]),
+      tag_header(&zelda[tag_start..tag_start + 11]),
       Ok((
         &b""[..],
-        TagHeader { tag_type: TagType::Audio, data_size: 642, timestamp: 0, stream_id: 0 }
-    )));
+        TagHeader {
+          tag_type: TagType::Audio,
+          data_size: 642,
+          timestamp: 0,
+          stream_id: 0
+        }
+      ))
+    );
 
-    let tag_start2 = 24+2984+4;
-    println!("size of previous tag: {:?}", be_u32::<_, ()>(&zeldaHQ[24+2984..tag_start2]));
-    println!("data:\n{}", (&zeldaHQ[tag_start2..tag_start2+11]).to_hex(8));
+    let tag_start2 = 24 + 2984 + 4;
+    println!(
+      "size of previous tag: {:?}",
+      be_u32::<_, ()>(&zeldaHQ[24 + 2984..tag_start2])
+    );
+    println!(
+      "data:\n{}",
+      (&zeldaHQ[tag_start2..tag_start2 + 11]).to_hex(8)
+    );
     assert_eq!(
-      tag_header(&zeldaHQ[tag_start2..tag_start2+11]),
+      tag_header(&zeldaHQ[tag_start2..tag_start2 + 11]),
       Ok((
         &b""[..],
-        TagHeader { tag_type: TagType::Audio, data_size: 642, timestamp: 0, stream_id: 0 }
-    )));
+        TagHeader {
+          tag_type: TagType::Audio,
+          data_size: 642,
+          timestamp: 0,
+          stream_id: 0
+        }
+      ))
+    );
 
-
-    println!("data: {:?}", audio_data(&zelda[tag_start+11..tag_start+11+642], 642));
-    println!("data: {:?}", audio_data(&zeldaHQ[tag_start2+11..tag_start2+11+642], 642));
+    println!(
+      "data: {:?}",
+      audio_data(&zelda[tag_start + 11..tag_start + 11 + 642], 642)
+    );
+    println!(
+      "data: {:?}",
+      audio_data(&zeldaHQ[tag_start2 + 11..tag_start2 + 11 + 642], 642)
+    );
     assert_eq!(
-      audio_data(&zelda[tag_start+11..tag_start+11+642], 642),
+      audio_data(&zelda[tag_start + 11..tag_start + 11 + 642], 642),
       Ok((
         &b""[..],
         AudioData {
           sound_format: SoundFormat::ADPCM,
-          sound_rate:   SoundRate::_22KHZ,
-          sound_size:   SoundSize::Snd16bit,
-          sound_type:   SoundType::SndMono,
-          sound_data:   &zelda[tag_start+12..tag_start+11+642]
+          sound_rate: SoundRate::_22KHZ,
+          sound_size: SoundSize::Snd16bit,
+          sound_type: SoundType::SndMono,
+          sound_data: &zelda[tag_start + 12..tag_start + 11 + 642]
         }
-    )));
+      ))
+    );
 
     assert_eq!(
-      audio_data(&zeldaHQ[tag_start2+11..tag_start2+11+642], 642),
+      audio_data(&zeldaHQ[tag_start2 + 11..tag_start2 + 11 + 642], 642),
       Ok((
         &b""[..],
         AudioData {
           sound_format: SoundFormat::ADPCM,
-          sound_rate:   SoundRate::_22KHZ,
-          sound_size:   SoundSize::Snd16bit,
-          sound_type:   SoundType::SndMono,
-          sound_data:   &zeldaHQ[tag_start2+12..tag_start2+11+642]
+          sound_rate: SoundRate::_22KHZ,
+          sound_size: SoundSize::Snd16bit,
+          sound_type: SoundType::SndMono,
+          sound_data: &zeldaHQ[tag_start2 + 12..tag_start2 + 11 + 642]
         }
-    )));
+      ))
+    );
   }
 
   #[test]
   fn video_tags() {
     let tag_start = 24;
     assert_eq!(
-      video_data(&zelda[tag_start..tag_start+537], 537),
+      video_data(&zelda[tag_start..tag_start + 537], 537),
       Ok((
         &b""[..],
         VideoData {
           frame_type: FrameType::Key,
-          codec_id:   CodecId::SORENSON_H263,
-          video_data: &zelda[tag_start+1..tag_start+537]
+          codec_id: CodecId::SORENSON_H263,
+          video_data: &zelda[tag_start + 1..tag_start + 537]
         }
-    )));
+      ))
+    );
     assert_eq!(
-      video_data(&zeldaHQ[tag_start..tag_start+2984], 2984),
+      video_data(&zeldaHQ[tag_start..tag_start + 2984], 2984),
       Ok((
         &b""[..],
         VideoData {
           frame_type: FrameType::Key,
-          codec_id:   CodecId::SORENSON_H263,
-          video_data: &zeldaHQ[tag_start+1..tag_start+2984]
+          codec_id: CodecId::SORENSON_H263,
+          video_data: &zeldaHQ[tag_start + 1..tag_start + 2984]
         }
-    )));
+      ))
+    );
   }
 
   #[test]
@@ -749,48 +831,58 @@ mod tests {
     let tag_end = tag_start + 273;
 
     match script_data(&commercials[tag_start..tag_end]) {
-      Ok((remaining,script_data)) => {
+      Ok((remaining, script_data)) => {
         assert_eq!(remaining.len(), 0);
-        assert_eq!(script_data,
+        assert_eq!(
+          script_data,
           ScriptData {
             name: "onMetaData",
-            arguments: ScriptDataValue::ECMAArray(
-              vec![
-                ScriptDataObject {
-                  name: "duration", data: ScriptDataValue::Number(28.133)
-                },
-                ScriptDataObject {
-                  name: "width", data: ScriptDataValue::Number(464.0)
-                },
-                ScriptDataObject {
-                  name: "height", data: ScriptDataValue::Number(348.0)
-                },
-                ScriptDataObject {
-                  name: "videodatarate", data: ScriptDataValue::Number(368.0)
-                },
-                ScriptDataObject {
-                  name: "framerate", data: ScriptDataValue::Number(30.0)
-                },
-                ScriptDataObject {
-                  name: "videocodecid", data: ScriptDataValue::Number(4.0)
-                },
-                ScriptDataObject {
-                  name: "audiodatarate", data: ScriptDataValue::Number(56.0)
-                },
-                ScriptDataObject {
-                  name: "audiodelay", data: ScriptDataValue::Number(0.0)
-                },
-                ScriptDataObject {
-                  name: "audiocodecid", data: ScriptDataValue::Number(2.0)
-                },
-                ScriptDataObject {
-                  name: "canSeekToEnd", data: ScriptDataValue::Number(1.0)
-                },
-                ScriptDataObject {
-                  name: "creationdate", data: ScriptDataValue::String("Thu Oct 04 18:37:42 2007\n")
-                }
-              ]
-            )
+            arguments: ScriptDataValue::ECMAArray(vec![
+              ScriptDataObject {
+                name: "duration",
+                data: ScriptDataValue::Number(28.133)
+              },
+              ScriptDataObject {
+                name: "width",
+                data: ScriptDataValue::Number(464.0)
+              },
+              ScriptDataObject {
+                name: "height",
+                data: ScriptDataValue::Number(348.0)
+              },
+              ScriptDataObject {
+                name: "videodatarate",
+                data: ScriptDataValue::Number(368.0)
+              },
+              ScriptDataObject {
+                name: "framerate",
+                data: ScriptDataValue::Number(30.0)
+              },
+              ScriptDataObject {
+                name: "videocodecid",
+                data: ScriptDataValue::Number(4.0)
+              },
+              ScriptDataObject {
+                name: "audiodatarate",
+                data: ScriptDataValue::Number(56.0)
+              },
+              ScriptDataObject {
+                name: "audiodelay",
+                data: ScriptDataValue::Number(0.0)
+              },
+              ScriptDataObject {
+                name: "audiocodecid",
+                data: ScriptDataValue::Number(2.0)
+              },
+              ScriptDataObject {
+                name: "canSeekToEnd",
+                data: ScriptDataValue::Number(1.0)
+              },
+              ScriptDataObject {
+                name: "creationdate",
+                data: ScriptDataValue::String("Thu Oct 04 18:37:42 2007\n")
+              }
+            ])
           }
         );
       }
@@ -800,36 +892,45 @@ mod tests {
 
   #[test]
   fn complete_video_tags() {
-    let tag_start      = 13;
+    let tag_start = 13;
     let tag_data_start = tag_start + 11;
     assert_eq!(
-      complete_tag(&zelda[tag_start..tag_data_start+537]),
+      complete_tag(&zelda[tag_start..tag_data_start + 537]),
       Ok((
         &b""[..],
         Tag {
-          header: TagHeader { tag_type: TagType::Video, data_size: 537, timestamp: 0, stream_id: 0 },
+          header: TagHeader {
+            tag_type: TagType::Video,
+            data_size: 537,
+            timestamp: 0,
+            stream_id: 0
+          },
           data: TagData::Video(VideoData {
             frame_type: FrameType::Key,
-            codec_id:   CodecId::SORENSON_H263,
-            video_data: &zelda[tag_data_start+1..tag_data_start+537]
+            codec_id: CodecId::SORENSON_H263,
+            video_data: &zelda[tag_data_start + 1..tag_data_start + 537]
           })
         }
       ))
     );
     assert_eq!(
-      complete_tag(&zeldaHQ[tag_start..tag_data_start+2984]),
+      complete_tag(&zeldaHQ[tag_start..tag_data_start + 2984]),
       Ok((
         &b""[..],
         Tag {
-          header: TagHeader { tag_type: TagType::Video, data_size: 2984, timestamp: 0, stream_id: 0 },
+          header: TagHeader {
+            tag_type: TagType::Video,
+            data_size: 2984,
+            timestamp: 0,
+            stream_id: 0
+          },
           data: TagData::Video(VideoData {
             frame_type: FrameType::Key,
-            codec_id:   CodecId::SORENSON_H263,
-            video_data: &zeldaHQ[tag_data_start+1..tag_data_start+2984]
+            codec_id: CodecId::SORENSON_H263,
+            video_data: &zeldaHQ[tag_data_start + 1..tag_data_start + 2984]
           })
         }
       ))
     );
   }
-
 }

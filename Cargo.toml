@@ -4,6 +4,7 @@ version = "0.2.0"
 authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
 license = "MIT"
 edition = "2018"
+include = ["src/**/*", "LICENSE", "README.md"]
 
 [dependencies]
 nom = "7.0"

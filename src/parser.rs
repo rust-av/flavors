@@ -72,7 +72,7 @@ pub fn tag_header(input: &[u8]) -> IResult<&[u8], TagHeader> {
   let header = TagHeader {
     tag_type,
     data_size,
-    timestamp: (timestamp_extended as u32) << 24 + timestamp,
+    timestamp: (timestamp_extended as u32) << (24 + timestamp),
     stream_id,
   };
   Ok((i, header))
@@ -95,7 +95,7 @@ pub fn complete_tag(input: &[u8]) -> IResult<&[u8], Tag<'_>> {
     header: TagHeader {
       tag_type,
       data_size,
-      timestamp: (timestamp_extended as u32) << 24 + timestamp,
+      timestamp: (timestamp_extended as u32) << (24 + timestamp),
       stream_id,
     },
     data,
@@ -194,7 +194,7 @@ pub fn aac_audio_packet(input: &[u8], size: usize) -> IResult<&[u8], AACAudioPac
   Ok((
     &input[size..],
     AACAudioPacket {
-      packet_type: packet_type,
+      packet_type,
       aac_data: &input[1..size],
     },
   ))
@@ -279,7 +279,7 @@ pub struct AudioDataHeader {
 }
 
 pub fn audio_data_header(input: &[u8]) -> IResult<&[u8], AudioDataHeader> {
-  if input.len() < 1 {
+  if input.is_empty() {
     return Err(Err::Incomplete(Needed::new(1)));
   }
 
@@ -414,8 +414,8 @@ pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPac
   Ok((
     &input[size..],
     AVCVideoPacket {
-      packet_type: packet_type,
-      composition_time: composition_time,
+      packet_type,
+      composition_time,
       avc_data: &input[4..size],
     },
   ))
@@ -466,8 +466,8 @@ pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData<'_>> {
   Ok((
     &input[size..],
     VideoData {
-      frame_type: frame_type,
-      codec_id: codec_id,
+      frame_type,
+      codec_id,
       video_data: &input[1..size],
     },
   ))
@@ -480,7 +480,7 @@ pub struct VideoDataHeader {
 }
 
 pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
-  if input.len() < 1 {
+  if input.is_empty() {
     return Err(Err::Incomplete(Needed::new(1)));
   }
 
@@ -513,8 +513,8 @@ pub fn video_data_header(input: &[u8]) -> IResult<&[u8], VideoDataHeader> {
   Ok((
     remaining,
     VideoDataHeader {
-      frame_type: frame_type,
-      codec_id: codec_id,
+      frame_type,
+      codec_id,
     },
   ))
 }
@@ -554,7 +554,7 @@ pub struct ScriptDataDate {
 }
 
 #[allow(non_upper_case_globals)]
-static script_data_name_tag: &'static [u8] = &[2];
+static script_data_name_tag: &[u8] = &[2];
 
 pub fn script_data(input: &[u8]) -> IResult<&[u8], ScriptData<'_>> {
   // Must start with a string, i.e. 2
@@ -573,7 +573,7 @@ pub fn script_data_value(input: &[u8]) -> IResult<&[u8], ScriptDataValue<'_>> {
     (i, 5) => Ok((i, ScriptDataValue::Null)), // to remove
     (i, 6) => Ok((i, ScriptDataValue::Undefined)), // to remove
     (i, 7) => map(be_u16, ScriptDataValue::Reference)(i),
-    (i, 8) => map(script_data_ECMA_array, ScriptDataValue::ECMAArray)(i),
+    (i, 8) => map(script_data_ecma_array, ScriptDataValue::ECMAArray)(i),
     (i, 10) => map(script_data_strict_array, ScriptDataValue::StrictArray)(i),
     (i, 11) => map(script_data_date, ScriptDataValue::Date)(i),
     (i, 12) => map(script_data_long_string, ScriptDataValue::LongString)(i),
@@ -591,7 +591,7 @@ pub fn script_data_object(input: &[u8]) -> IResult<&[u8], ScriptDataObject<'_>> 
 }
 
 #[allow(non_upper_case_globals)]
-static script_data_object_end_terminator: &'static [u8] = &[0, 0, 9];
+static script_data_object_end_terminator: &[u8] = &[0, 0, 9];
 
 pub fn script_data_object_end(input: &[u8]) -> IResult<&[u8], &[u8]> {
   tag(script_data_object_end_terminator)(input)
@@ -614,7 +614,7 @@ pub fn script_data_date(input: &[u8]) -> IResult<&[u8], ScriptDataDate> {
   Ok((i, date))
 }
 
-pub fn script_data_ECMA_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject<'_>>> {
+pub fn script_data_ecma_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject<'_>>> {
   let (i, _) = be_u32(input)?;
   script_data_objects(i)
 }

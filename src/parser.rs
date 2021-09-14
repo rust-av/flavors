@@ -78,7 +78,7 @@ pub fn tag_header(input: &[u8]) -> IResult<&[u8], TagHeader> {
   Ok((i, header))
 }
 
-pub fn complete_tag(input: &[u8]) -> IResult<&[u8], Tag> {
+pub fn complete_tag(input: &[u8]) -> IResult<&[u8], Tag<'_>> {
   let (i, tag_type) = be_u8(input)?;
   let tag_type = match tag_type {
     8 => TagType::Audio,
@@ -103,7 +103,7 @@ pub fn complete_tag(input: &[u8]) -> IResult<&[u8], Tag> {
   Ok((i, tag))
 }
 
-pub fn tag_data(tag_type: TagType, size: usize) -> impl Fn(&[u8]) -> IResult<&[u8], TagData> {
+pub fn tag_data(tag_type: TagType, size: usize) -> impl Fn(&[u8]) -> IResult<&[u8], TagData<'_>> {
   move |input: &[u8]| match tag_type {
     TagType::Video => map(|i| video_data(i, size), TagData::Video)(input),
     TagType::Audio => map(|i| audio_data(i, size), TagData::Audio)(input),
@@ -176,7 +176,7 @@ pub struct AACAudioPacket<'a> {
   pub aac_data: &'a [u8],
 }
 
-pub fn aac_audio_packet(input: &[u8], size: usize) -> IResult<&[u8], AACAudioPacket> {
+pub fn aac_audio_packet(input: &[u8], size: usize) -> IResult<&[u8], AACAudioPacket<'_>> {
   if input.len() < size {
     return Err(Err::Incomplete(Needed::new(size)));
   }
@@ -209,7 +209,7 @@ pub struct AudioData<'a> {
   pub sound_data: &'a [u8],
 }
 
-pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
+pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData<'_>> {
   if input.len() < size {
     return Err(Err::Incomplete(Needed::new(size)));
   }
@@ -393,7 +393,7 @@ pub struct AVCVideoPacket<'a> {
   pub avc_data: &'a [u8],
 }
 
-pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPacket> {
+pub fn avc_video_packet(input: &[u8], size: usize) -> IResult<&[u8], AVCVideoPacket<'_>> {
   if input.len() < size {
     return Err(Err::Incomplete(Needed::new(size)));
   }
@@ -428,7 +428,7 @@ pub struct VideoData<'a> {
   pub video_data: &'a [u8],
 }
 
-pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData> {
+pub fn video_data(input: &[u8], size: usize) -> IResult<&[u8], VideoData<'_>> {
   if input.len() < size {
     return Err(Err::Incomplete(Needed::new(size)));
   }
@@ -556,14 +556,14 @@ pub struct ScriptDataDate {
 #[allow(non_upper_case_globals)]
 static script_data_name_tag: &'static [u8] = &[2];
 
-pub fn script_data(input: &[u8]) -> IResult<&[u8], ScriptData> {
+pub fn script_data(input: &[u8]) -> IResult<&[u8], ScriptData<'_>> {
   // Must start with a string, i.e. 2
   let (i, _) = tag(script_data_name_tag)(input)?;
   let (i, (name, arguments)) = pair(script_data_string, script_data_value)(i)?;
   Ok((i, ScriptData { name, arguments }))
 }
 
-pub fn script_data_value(input: &[u8]) -> IResult<&[u8], ScriptDataValue> {
+pub fn script_data_value(input: &[u8]) -> IResult<&[u8], ScriptDataValue<'_>> {
   match be_u8(input)? {
     (i, 0) => map(be_f64, ScriptDataValue::Number)(i),
     (i, 1) => map(be_u8, |n| ScriptDataValue::Boolean(n != 0))(i),
@@ -581,11 +581,11 @@ pub fn script_data_value(input: &[u8]) -> IResult<&[u8], ScriptDataValue> {
   }
 }
 
-pub fn script_data_objects(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {
+pub fn script_data_objects(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject<'_>>> {
   terminated(many0(script_data_object), script_data_object_end)(input)
 }
 
-pub fn script_data_object(input: &[u8]) -> IResult<&[u8], ScriptDataObject> {
+pub fn script_data_object(input: &[u8]) -> IResult<&[u8], ScriptDataObject<'_>> {
   let (i, (name, data)) = pair(script_data_string, script_data_value)(input)?;
   Ok((i, ScriptDataObject { name, data }))
 }
@@ -614,12 +614,12 @@ pub fn script_data_date(input: &[u8]) -> IResult<&[u8], ScriptDataDate> {
   Ok((i, date))
 }
 
-pub fn script_data_ECMA_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject>> {
+pub fn script_data_ECMA_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataObject<'_>>> {
   let (i, _) = be_u32(input)?;
   script_data_objects(i)
 }
 
-pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataValue>> {
+pub fn script_data_strict_array(input: &[u8]) -> IResult<&[u8], Vec<ScriptDataValue<'_>>> {
   match be_u32(input) {
     Ok((i, o)) => many_m_n(1, o as usize, script_data_value)(i),
     Err(err) => Err(err),

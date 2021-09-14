@@ -3,6 +3,7 @@ name = "flavors"
 version = "0.2.0"
 authors = ["Geoffroy Couprie <geo.couprie@gmail.com>"]
 license = "MIT"
+edition = "2018"
 
 [dependencies]
 nom = "7.0"

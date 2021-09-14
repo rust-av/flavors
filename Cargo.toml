@@ -7,6 +7,3 @@ edition = "2018"
 
 [dependencies]
 nom = "7.0"
-
-[features]
-nightly = []

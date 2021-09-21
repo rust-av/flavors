@@ -3,7 +3,14 @@
 name = "flavors-fuzz"
 version = "0.0.1"
 authors = ["Automatically generated"]
+edition = "2018"
 publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
 
 [dependencies.flavors]
 path = ".."

@@ -72,7 +72,7 @@ pub fn tag_header(input: &[u8]) -> IResult<&[u8], TagHeader> {
   let header = TagHeader {
     tag_type,
     data_size,
-    timestamp: (timestamp_extended as u32) << (24 + timestamp),
+    timestamp: (u32::from(timestamp_extended) << 24) + timestamp,
     stream_id,
   };
   Ok((i, header))
@@ -95,7 +95,7 @@ pub fn complete_tag(input: &[u8]) -> IResult<&[u8], Tag<'_>> {
     header: TagHeader {
       tag_type,
       data_size,
-      timestamp: (timestamp_extended as u32) << (24 + timestamp),
+      timestamp: (u32::from(timestamp_extended) << 24) + timestamp,
       stream_id,
     },
     data,

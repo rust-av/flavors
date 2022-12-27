@@ -1,4 +1,4 @@
-# Flavors, a FLV parser in Rust with nom
+# Flavors, an FLV parser in Rust with nom
 
 [![Actions Status](https://github.com/rust-av/flavors/workflows/flavors/badge.svg)](https://github.com/rust-av/flavors/actions)
 [![Coverage Status](https://coveralls.io/repos/Geal/flavors/badge.svg?branch=master)](https://coveralls.io/r/Geal/flavors?branch=master)

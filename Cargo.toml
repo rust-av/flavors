@@ -7,4 +7,4 @@ edition = "2021"
 include = ["src/**/*", "LICENSE", "README.md"]
 
 [dependencies]
-nom = "7.0"
+nom = "8.0"
